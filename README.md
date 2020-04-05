@@ -41,7 +41,7 @@ List of supported operating systems and file systems:
 
 For further information please refer to the following files:
 
-* <A HREF="doc/Quota.pm">Quota.pm</A>: API documentation
+* <A HREF="doc/FsQuota.pod">Quota.pm</A>: API documentation
 * <A HREF="INSTALL">INSTALL</A>: Installation description
 * <A HREF="CHANGES">CHANGES</A>: Change log &amp; acknowledgements
 * <A HREF="LICENSE">LICENSE</A>: GPL License
