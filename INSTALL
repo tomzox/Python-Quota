@@ -1,0 +1,66 @@
+Installation Instructions
+-------------------------
+
+Usually all you have to do is:
+
+	python3 setup.py build
+	python3 setup.py test
+	python3 setup.py install
+
+If any step fails, regard the following instructions step by step.
+
+Options:
+
+-> Support for Solaris VxFS should be added automatically if the module
+   is installed. If not, #define or #undef SOLARIS_VXFS in myconfig.h
+
+-> If you want support for AFS, you need the OpenAFS package
+   (tested with OpenAFS on (SuSE) Linux, HP-UX10, Solaris 2.6, 2.8, AIX 4.3
+   and IRIX 6.5).
+   The Makefile.PL tries to detect automatically if AFS is preset on a
+   system. If that fails, edit the Makefile.PL to always define $hasafs
+   (and drop me a mail).
+
+
+1)  On Linux systems make sure you have configured your kernel with quota
+    support. You also need the quota utilities and headers. E.g., with
+    the SuSE Linux 6.0 distribution you'll find them in package ap::quota.
+    If your distribution doesn't include the package you can get it from
+    <URL:http://sourceforge.net/projects/linuxquota>. See also (6) below.
+
+    Since 2019, SUN-RPC support has been split off from glibc in some
+    Linux distributions. If you run into compilation problems due to
+    missing header rpc/rpc.h, install package "libtirpc-dev"
+
+2)  Link or create the hints file.
+
+ a) Should be done by Makefile.PL for all supported systems. If not, and
+    there is a file below hints/ for your operating system (maybe for a
+    previous release), just create a link named "myconfig.h" to that file:
+    ln -s hints/my-os.h myconfig.h
+
+ b) Else, use hints/none.h to create a myconfig.h of your own. Check which
+    #includes you need in the online manuals. Contact me before you invest
+    a lot of time, it might already be done.
+
+    Edit Makefile.PL to maybe add/delete some libraries. Usually you'll
+    need only librpcsvc for the quota RPC mechanism. If you don't have
+    this library or it lacks the quota routines, #define MY_XDR in
+    myconfig.h to include the routines provided with this module. If you
+    don't have /usr/include/rpcsvc/rquota.h, include "include/rquota.h"
+    instead. If you don't need RPC at all, just define NO_RPC.
+
+3)  Generate the Makefile & compile: python3 setup.py build
+
+4)  Run "python3 setup.py test" to check if the module routines do work
+    correctly. Run the script once for user-quota and once group-quota,
+    if needed.
+
+5)  To install the module: "python3 setup.py install"
+
+6)  Before you start building for another OS, type "python3 setup.py clean"
+
+
+Please email me with any adaption required in the hints files or setup.py for
+getting the package to compile on your system. Please remember to include the
+name of the OS and version numbers of OS (uname -rs) and quota module.
