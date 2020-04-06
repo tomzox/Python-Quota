@@ -72,6 +72,8 @@ static struct
     char          hostname[MAX_MACHINE_NAME + 1];
 } quota_rpc_auth = {-1, -1, {0} };
 
+static const char * quota_rpc_strerror = NULL;
+
 struct quota_xs_nfs_rslt
 {
     double bhard;
@@ -108,7 +110,10 @@ callaurpc(host, prognum, versnum, procnum, inproc, in, outproc, out)
      */
     hp = gethostbyname(host);
     if (hp == NULL)
-        return ((int) RPC_UNKNOWNHOST);
+    {
+        quota_rpc_strerror = clnt_sperrno(RPC_UNKNOWNHOST);
+        return -1;
+    }
 
     rep_time.tv_sec = quota_rpc_cfg.timeout / 1000;
     rep_time.tv_usec = (quota_rpc_cfg.timeout % 1000) * 1000;
@@ -132,7 +137,13 @@ callaurpc(host, prognum, versnum, procnum, inproc, in, outproc, out)
     }
 
     if (client == NULL)
-        return ((int) rpc_createerr.cf_stat);
+    {
+        if (rpc_createerr.cf_stat != RPC_SUCCESS)
+            quota_rpc_strerror = clnt_sperrno(rpc_createerr.cf_stat);
+        else  /* should never happen (may be due to inconsistent symbol resolution) */
+            quota_rpc_strerror = "RPC creation failed for unknown reasons";
+        return -1;
+    }
 
     /*
      *  Create an authentication handle
@@ -163,7 +174,16 @@ callaurpc(host, prognum, versnum, procnum, inproc, in, outproc, out)
     }
     clnt_destroy(client);
 
-    return ((int) clnt_stat);
+    if (clnt_stat != RPC_SUCCESS)
+    {
+        quota_rpc_strerror = clnt_sperrno(clnt_stat);
+        return -1;
+    }
+    else
+    {
+        quota_rpc_strerror = NULL;
+        return 0;
+    }
 }
 
 static int
@@ -196,8 +216,9 @@ getnfsquota( char *hostp, char *fsnamep, int uid, int kind,
 
         if (callaurpc(hostp, RQUOTAPROG, RQUOTAVERS, RQUOTAPROC_GETQUOTA,
                       xdr_getquota_args, &gq_args,
-                      xdr_getquota_rslt, &gq_rslt) != 0) {
-          return (-1);
+                      xdr_getquota_rslt, &gq_rslt) != 0)
+        {
+            return (-1);
         }
     }
 
@@ -235,7 +256,10 @@ getnfsquota( char *hostp, char *fsnamep, int uid, int kind,
           rslt->bcur *= qb_fac;
         }
         else {
-          qb_fac = DEV_QBSIZE / gq_rslt.GQR_RQUOTA.rq_bsize;
+          if (gq_rslt.GQR_RQUOTA.rq_bsize != 0)
+              qb_fac = DEV_QBSIZE / gq_rslt.GQR_RQUOTA.rq_bsize;
+          else
+              qb_fac = 1;
           rslt->bhard = gq_rslt.GQR_RQUOTA.rq_bhardlimit / qb_fac;
           rslt->bsoft = gq_rslt.GQR_RQUOTA.rq_bsoftlimit / qb_fac;
           rslt->bcur = gq_rslt.GQR_RQUOTA.rq_curblocks / qb_fac;
@@ -356,6 +380,9 @@ FsQuota_query(PyObject *self, PyObject *args)
     PyObject * RETVAL = Py_None;
     char *p = NULL;
     int err;
+#ifndef NO_RPC
+    quota_rpc_strerror = NULL;
+#endif
 #ifdef SGI_XFS
     if (!strncmp(dev, "(XFS)", 5))
     {
@@ -573,8 +600,11 @@ FsQuota_setqlim(PyObject *self, PyObject *args)
     int     timelimflag = 0;
     int     kind = 0;
 
-    if (!PyArg_ParseTuple(args, "siKKKK|dd", &dev, &uid, &bs, &bh, &fs, &fh, &timelimflag, &kind))
+    if (!PyArg_ParseTuple(args, "siKKKK|ii", &dev, &uid, &bs, &bh, &fs, &fh, &timelimflag, &kind))
         return NULL;
+#ifndef NO_RPC
+    quota_rpc_strerror = NULL;
+#endif
 
     int RETVAL;
 
@@ -774,8 +804,12 @@ FsQuota_sync(PyObject *self, PyObject *args)
 
     if (!PyArg_ParseTuple(args, "|s", &dev))
         return NULL;
+#ifndef NO_RPC
+    quota_rpc_strerror = NULL;
+#endif
 
     int RETVAL;
+
 #ifdef SOLARIS_VXFS
     if ((dev != NULL) && !strncmp(dev, "(VXFS)", 6))
     {
@@ -1254,6 +1288,9 @@ FsQuota_setmntent(PyObject *self, PyObject *args)  // METH_NOARGS
 {
     int RETVAL = my_setmntent(&module_state_mntent);
 
+#ifndef NO_RPC
+    quota_rpc_strerror = NULL;
+#endif
     return PyLong_FromLong(RETVAL);
 }
 
@@ -1261,6 +1298,9 @@ static PyObject *
 FsQuota_getmntent(PyObject *self, PyObject *args)  // METH_NOARGS
 {
     PyObject * RETVAL = NULL;
+#ifndef NO_RPC
+    quota_rpc_strerror = NULL;
+#endif
 
     char *str_buf[4];
     if (my_getmntent(&module_state_mntent, str_buf) == 0)
@@ -1423,6 +1463,11 @@ FsQuota_strerr(PyObject *self, PyObject *args)  // METH_NOARGS
 {
     const char * str;
 
+#ifndef NO_RPC
+    if (quota_rpc_strerror != NULL)
+        str = quota_rpc_strerror;
+    else
+#endif
     if ((errno == EINVAL) || (errno == ENOTTY) || (errno == ENOENT) || (errno == ENOSYS))
         str = "No quotas on this system";
     else if (errno == ENODEV)

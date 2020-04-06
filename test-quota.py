@@ -1,7 +1,7 @@
 #!/usr/bin/python3
-# ------------------------------------------------------------------------ #
+# ----------------------------------------------------------------------------
 # Interactive test and demo script for the Python FsQuota extension module
-#
+# ----------------------------------------------------------------------------
 # Author: T. Zoerner 1995-2020
 #
 # This program (test.py) is in the public domain and can be used and
@@ -10,11 +10,12 @@
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-# ------------------------------------------------------------------------ #
+# ----------------------------------------------------------------------------
 
 import os
 import sys
 import errno
+import time
 import re
 import FsQuota
 
@@ -25,7 +26,7 @@ def fmt_quota_vals(qtup):
     tm = time.localtime(qtup[7])
     ft_str = format("%04d-%02d-%02d/%02d:%02d" % (tm.tm_year+1900, tm.tm_mon+1, tm.tm_mday, tm.tm_hour, tm.tm_min))
 
-    return format("%d (%d,%d,%s) %d (%d,%d,%s)\n" %
+    return format("%d (%d,%d,%s) %d (%d,%d,%s)" %
                     (qtup[0], qtup[1], qtup[2], bt_str, qtup[4], qtup[5], qtup[6], ft_str))
 
 if not sys.stdin.isatty() or not sys.stdout.isatty():
@@ -123,6 +124,7 @@ else:
 ##
 
 if dev.startswith("/"):
+    path = os.path.abspath(path)
     print("Query localhost:%s via RPC." % path)
 
     if is_group == 0:
@@ -131,7 +133,7 @@ if dev.startswith("/"):
         qtup = FsQuota.rpcquery('localhost', path, uid_val, is_group)
 
     if qtup is not None:
-        print("Your usage and limits for %s %d are %s\n" % fmt_quota_vals(qtup))
+        print("Your usage and limits are %s\n" % fmt_quota_vals(qtup))
     else:
         print("Failed to query localhost: " + FsQuota.strerr())
 
@@ -185,8 +187,6 @@ if path:
 
     if bs is not None:
         dev = FsQuota.getqcarg(path)
-        # TODO major FIXME C module crashes when 8th parameter is passed!?
-        # if FsQuota.setqlim(dev, uid_val, bs,bh,fs,fh, 1, is_group) == 0:
         if FsQuota.setqlim(dev, uid_val, bs,bh,fs,fh, 1) == 0:
             print("Quota set successfully for %s %d" % (n_uid_gid, uid_val))
         else:

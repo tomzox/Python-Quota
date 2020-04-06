@@ -1,118 +1,161 @@
+# ----------------------------------------------------------------------------
+# Copyright (C) 1995-2020 T. Zoerner
+# ----------------------------------------------------------------------------
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by the
+# Free Software Foundation.  (Either version 2 of the GPL, or any later
+# version, see http://www.opensource.org/licenses/).
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
+# ----------------------------------------------------------------------------
+
 from setuptools import setup, Extension
+from distutils.command.install import install
 
-#-----------------------------------------------------------------------------#
+import os
+import os.path
+import sys
+import subprocess
+import shutil
+import re
+
+# ----------------------------------------------------------------------------
 # Note most configuration (including compile-switches) is done via includes
-# in the hints/ directory. The following only manages source lists and libs.
-#-----------------------------------------------------------------------------#
+# in the hints/ directory. The following only manages source lists and libs
+# ----------------------------------------------------------------------------
+
+extrasrc = []
+extrainc = []
+extradef = []
+extralibs = []
+extralibdirs = []
+
 #
-# Automagically choose the right configuration
+# Select a configuration header file based on OS & revision
 #
-#X#chop($os = `uname -rs 2>/dev/null`);
-#X#if   ($os =~ /^SunOS 4\.1/){ $config='sunos_4_1.h'; }
-#X#elsif($os =~ /^SunOS 5/)   { $config='solaris_2.h'; }
-#X#elsif($os =~ /^HP-UX (A\.09|B\.10|[BC]\.11)/) { $config='hpux.h'; }
-#X#elsif($os =~ /^IRIX 5/)    { $config='irix_5.h'; }
-#X#elsif($os =~ /^IRIX\d* 6/) { $config='irix_6.h'; }
-#X#elsif($os =~ /^OSF1/)      { $config='dec_osf.h'; }
-#X#elsif($os =~ /^Linux/)     { $config='linux.h'; $picobj='linuxapi.o'; }
-#X#elsif($os =~ /^AIX/)       { $config='aix_4_1.h'; }
-#X#elsif($os =~ /^BSD\/OS 2/ ||
-#X#      $os =~ /^Darwin/    ||
-#X#      $os =~ /^FreeBSD/   ||
-#X#      $os =~ /^NetBSD/    ||
-#X#      $os =~ /^OpenBSD/)   { $config='bsd.h'; }
-#X#
-#X#if (defined($config)) {
-#X#  print "Using hints/$config for myconfig.h\n";
-#X#  if (-e "myconfig.h" && (!(-l "myconfig.h") || (readlink("myconfig.h") ne "hints/$config"))) {
-#X#     die "\nFATAL: myconfig.h already exists.\n\n" .
-#X#         "You need to do a `make clean' before you configure for a new platform.\n".
-#X#	 "If that doesn't help, remove myconfig.h manually.\n";
-#X#  }
-#X#}
-#X#else {
-#X#  warn "WARNING: No appropriate hints found for this OS: '$os - see INSTALL'\n";
-#X#}
-#X#
-#X#my $extralibs = "";
-#X#
-#X## check whether the Andrew File System (AFS) is installed and running
-#X#
-#X#if ( -d "/afs" ) {
-#X#  my $afs = `df /afs 2>/dev/null`;
-#X#  if ($afs =~ /\nAFS|\(AFS/) {
-#X#    $hasafs = '-DAFSQUOTA';
-#X#    $AFSHOME = -d "/usr/afsws" ? "/usr/afsws" : "/usr";
-#X#    $extrainc = "-I$AFSHOME/include -I$AFSHOME/include/afs";
-#X#    $extralibs .= " -L$AFSHOME/lib -L$AFSHOME/lib/afs -lsys -lrx -lrxkad -llwp";
-#X#    $afsquota = "afsquota.o";
-#X#  }
-#X#}
-#X#
-#X## check to see if we have a kernel module for the Veritas file system
-#X#if ( $os =~ /^SunOS/ ) {
-#X#   if ( -f '/usr/include/sys/fs/vx_quota.h' ) {
-#X#     $hasvxfs = '-DSOLARIS_VXFS';
-#X#     $extraobj = "$extraobj vxquotactl.o";
-#X#     print "Configured with the VERITAS File System on Solaris\n";
-#X#   }
-#X#   # no warning because newer versions of Solaris have internal VxFS support
-#X#   # else {
-#X#   #   print "Configured without VxFS support\n";
-#X#   # }
-#X#}
-#X#
-#X## check whether we are using the NetBSD quota library
-#X#if (   (($os =~ /^NetBSD 5\.99\.(\d+)/i) && ($1 >= 59))
-#X#    || (($os =~ /^NetBSD (\d)(\.|$)/i) && ($1 >= 6)) ) {
-#X#  $extralibs .= " -lquota";
-#X#}
-#X#
-#X## check whether RPCSVC is included within libc
-#X## - SUN RPC/XDR support was split off from glibc, see:
-#X##   https://lists.fedoraproject.org/archives/list/devel@lists.fedoraproject.org/thread/F2NRCEXDDUF6WWNPSOMXRJS6BPMTEEVJ/
-#X## - in RHEL apparently the rpc/rpc.h header was moved too;
-#X##   Debian has libtirpc, but headers and implementation are still in glibc too
-#X#if (($os =~ /^Linux/) && (-d '/usr/include/tirpc')) {
-#X#  print "Configured to use tirpc library instead of rpcsvc\n";
-#X#  $extrainc = "-I/usr/include/tirpc";
-#X#  $rpclibs .= "-ltirpc";
-#X#}
-#X#else {
-#X#  if (($os =~ /^Linux/) && (!-e '/usr/include/rpc/rpc.h')) {
-#X#    print "WARNING: Header file /usr/include/rpc/rpc.h not present on this system.\n" .
-#X#          "         Likely compilation will fail. Recommend to either install package\n" .
-#X#          "         \"libtirpc-dev\", or disable RPC (network file system) support by\n" .
-#X#          "         adding the following switch to myconfig.h:\n" .
-#X#          "         #define NO_RPC\n";
-#X#  }
-#X#  $rpclibs .= "-lrpcsvc";
-#X#}
+osr = subprocess.run(['uname', '-rs'], stdout=subprocess.PIPE).stdout.decode('utf-8')
 
-#X#&WriteMakefile('NAME'         => 'Quota',
-#X#               'OBJECT'       => '$(BASEEXT)$(OBJ_EXT) stdio_wrap.o '.
-#X#                                 "$afsquota $picobj $extraobj ". $hint{'OBJ'},
-#X#               'INC'          => $extrainc .' '. $hint{'INC'},
-#X#               'DEFINE'       => "$hasafs $hasvxfs",
-#X#               'LIBS'         => [ "$rpclibs $extralibs" ],
-#X#               'H'            => [ 'myconfig.h' ],
-#X#               'VERSION_FROM' => 'Quota.pm',
-#X#               'clean'        => { FILES => 'myconfig.h' },
-#X#);
+if   re.match(r"^SunOS 4\.1", osr) : config='sunos_4_1.h'
+elif re.match(r"^SunOS 5", osr)    : config='solaris_2.h'
+elif re.match(r"^HP-UX (A\.09|B\.10|[BC]\.11)", osr): config='hpux.h'
+elif re.match(r"^IRIX 5", osr)     : config='irix_5.h'
+elif re.match(r"^IRIX\d* 6", osr)  : config='irix_6.h'
+elif re.match(r"^OSF1", osr)       : config='dec_osf.h'
+elif re.match(r"^Linux", osr)      : config='linux.h'
+elif re.match(r"^AIX", osr)        : config='aix_4_1.h'
+elif (re.match(r"^BSD\/OS 2", osr) or
+      re.match(r"^Darwin", osr)    or
+      re.match(r"^FreeBSD", osr)   or
+      re.match(r"^NetBSD", osr)    or
+      re.match(r"^OpenBSD", osr))  : config='bsd.h'
+else:
+    print("FATAL: No appropriate hints found for this OS/revision: '%s' - see INSTALL" % os, file=sys.stderr)
+    exit(1)
 
-#-----------------------------------------------------------------------------#
+config = "hints/" + config
+print("Using %s for myconfig.h" % config)
 
-with open("README.md") as fh:
-    long_description = fh.read()
+if (    os.path.isfile("myconfig.h")
+    and (not os.path.islink("myconfig.h") or not (os.readlink("myconfig.h") == config))):
+    print("\nFATAL: myconfig.h already exists.\n\n" +
+         "You need to do a \"make clean\" before configuring for a new platform.\n" +
+         "If that doesn't help, remove myconfig.h manually.")
+    exit(1)
+
+
+# check whether the Andrew File System (AFS) is installed and running
+if os.path.isdir("/afs"):
+    df_afs = subprocess.run(['df', '/afs'], stdout=subprocess.PIPE).stdout.decode('utf-8')
+    if re.match(r"\nAFS|\(AFS/", df_afs):
+        AFSHOME = "/usr/afsws" if os.path.isdir("/usr/afsws") else "/usr"
+        extradef += [('AFSQUOTA', 1)]
+        extrainc += [AFSHOME+"/include", AFSHOME+"/include/afs"]
+        extralibdirs += [AFSHOME+"/lib", AFSHOME+"/lib/afs"]
+        extralibs += ["sys", "rx", "rxkad", "lwp"]
+        extrasrc += ["src/afsquota.c"]
+
+# check to see if we have a kernel module for the Veritas file system
+if re.match(r"^SunOS", osr):
+    if os.path.isfile('/usr/include/sys/fs/vx_quota.h'):
+        extradef += [('SOLARIS_VXFS', 1)];
+        extrasrc += ["src/vxquotactl.c"]
+        print("Configured with the VERITAS File System on Solaris")
+    else:
+        # no warning because newer versions of Solaris have internal VxFS support
+        #print("Configured without VxFS support")
+        pass
+
+# check whether we are using the NetBSD quota library
+match1 = re.match(r"^NetBSD 5\.99\.(\d+)", osr, flags=re.IGNORECASE)
+match2 = re.match(r"^NetBSD (\d)(\.|$)", osr, flags=re.IGNORECASE)
+if (   (match1 and (int(match1.group(1)) >= 59))
+    or (match2 and (int(match2.group(1)) >= 6))):
+    extralibs += ["quota"]
+
+# check whether RPCSVC is included within libc
+# - SUN RPC/XDR support was split off from glibc, see:
+#   https://lists.fedoraproject.org/archives/list/devel@lists.fedoraproject.org/thread/F2NRCEXDDUF6WWNPSOMXRJS6BPMTEEVJ/
+# - in RHEL apparently the rpc/rpc.h header was moved too;
+#   Debian has libtirpc, but headers and implementation are still in glibc too
+if re.match(r"^Linux", osr):
+    extrasrc += ["src/linuxapi.c"]
+
+    if os.path.isdir('/usr/include/tirpc'):
+        print("Configured to use tirpc library instead of rpcsvc")
+        extrainc  += ["/usr/include/tirpc"]
+        extralibs += ["tirpc"]
+    else:
+        if not os.path.isfile('/usr/include/rpc/rpc.h'):
+            print("WARNING: Header file /usr/include/rpc/rpc.h not present on this system.\n" +
+                  "         Likely compilation will fail. Recommend to either install package\n" +
+                  "         \"libtirpc-dev\", or disable RPC (network file system) support by\n" +
+                  "         adding the following switch to myconfig.h:\n" +
+                  "         #define NO_RPC\n")
+        extralibs += ["rpcsvc"]
+
+# ----------------------------------------------------------------------------
+
+class MyClean(install):
+    def run(self):
+        if os.path.isdir('build'):
+            shutil.rmtree('build')
+        if os.path.isdir('FsQuota.egg-info'):
+            shutil.rmtree('FsQuota.egg-info')
+        if os.path.isdir('__pycache__'):
+            shutil.rmtree('__pycache__')
+        if os.path.isfile('myconfig.h'):
+            os.remove('myconfig.h')
+        for name in os.listdir('.'):
+            if re.match(r"^FsQuota\..*\.so$", name):
+                os.remove(name)
+
+# ----------------------------------------------------------------------------
+# Finally execute the setup command
+
+if not os.path.isfile("myconfig.h"):
+    os.symlink(config, "myconfig.h")
 
 ext = Extension('FsQuota',
-                sources=['src/FsQuota.c', 'src/linuxapi.c'],
-                include_dirs=['src', '.'])
+                sources       = ['src/FsQuota.c'] + extrasrc,
+                include_dirs  = ['.'] + extrainc,
+                define_macros = extradef,
+                libraries     = extralibs,
+                library_dirs  = extralibdirs,
+                undef_macros  = ["NDEBUG"]   # TODO not for release
+               )
 
 setup(name='FsQuota',
       version='0.0.1',
       description='Interface to file system quotas on UNIX platforms',
-      long_description=long_description,
+      long_description=
+            "The Python file-system quota module allows accessing file system quotas "+
+            "on UNIX platforms. This works both for locally mounted file systems and "+
+            "network file systems (via RPC, i.e. Remote Procedure Call) on Linux, AIX, "+
+            "the BSDs, HP-UX, IRIX and Solaris. The interface is designed to be "+
+            "independent of UNIX flavours as well as file system types.",
       long_description_content_type="text/markdown",
       author='T. Zoerner',
       author_email='tomzo@users.sourceforge.net',
@@ -133,5 +176,7 @@ setup(name='FsQuota',
           "Operating System :: POSIX :: IRIX",
           "Operating System :: POSIX :: SunOS/Solaris",
           "Operating System :: UNIX",
-          "License :: OSI Approved :: BSD 2-Clause",
-      ])
+          "License :: OSI Approved :: GNU General Public License v2 or later (GPLv2+)"
+         ],
+      cmdclass={'clean': MyClean},
+      )
