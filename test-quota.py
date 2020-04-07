@@ -19,20 +19,30 @@ import time
 import re
 import FsQuota
 
-def fmt_quota_vals(qtup):
-    tm = time.localtime(qtup[3])
-    bt_str = format("%04d-%02d-%02d/%02d:%02d" % (tm.tm_year+1900, tm.tm_mon+1, tm.tm_mday, tm.tm_hour, tm.tm_min))
-
-    tm = time.localtime(qtup[7])
-    ft_str = format("%04d-%02d-%02d/%02d:%02d" % (tm.tm_year+1900, tm.tm_mon+1, tm.tm_mday, tm.tm_hour, tm.tm_min))
-
-    return format("%d (%d,%d,%s) %d (%d,%d,%s)" %
-                    (qtup[0], qtup[1], qtup[2], bt_str, qtup[4], qtup[5], qtup[6], ft_str))
-
+#
+# Exit immediately when input/output is not a terminal
+# as this script is interactive and cannot be run in automated testing
+#
 if not sys.stdin.isatty() or not sys.stdout.isatty():
     print("\nThis is an interactive test script - input and output must be a tty\nExiting now.\n", file=sys.stderr)
     sys.exit(0)
 
+#
+# Helper function for printing quota query results
+#
+def fmt_quota_vals(qtup):
+    tm = time.localtime(qtup[3])
+    bt_str = ("%04d-%02d-%02d/%02d:%02d" % (tm.tm_year, tm.tm_mon, tm.tm_mday, tm.tm_hour, tm.tm_min))
+
+    tm = time.localtime(qtup[7])
+    ft_str = ("%04d-%02d-%02d/%02d:%02d" % (tm.tm_year, tm.tm_mon, tm.tm_mday, tm.tm_hour, tm.tm_min))
+
+    return ("%d (%d,%d,%s) %d (%d,%d,%s)" %
+                (qtup[0], qtup[1], qtup[2], bt_str, qtup[4], qtup[5], qtup[6], ft_str))
+
+#
+# Ask user for choosing user or group quotas
+#
 is_group = False
 while True:
     is_group = input("\nQuery user [u] or group [g] quota? (default: user)? ")
@@ -44,6 +54,9 @@ while True:
 
 n_uid_gid = "GID" if is_group else "UID"
 
+#
+# Ask user for a path to a file system with quotas
+#
 while True:
     path = input("\nEnter path to get quota for (NFS possible; default '.'): ")
     if path == "":
@@ -51,7 +64,7 @@ while True:
 
     while True:
         dev = FsQuota.getqcarg(path)
-        if dev == "":
+        if dev is None:
             print("%s: mount point not found" % path, file=sys.stderr)
             if os.path.isdir(path) and not path.endswith("/."):
                 #
@@ -63,7 +76,8 @@ while True:
             else: break
         else: break
 
-    if dev: break
+    if dev is None:
+        continue
     print("Using device/argument \"%s\"" % dev)
 
     ##
@@ -73,35 +87,39 @@ while True:
     if match:
         print("Is a remote file system")
         break
-
-    elif FsQuota.sync(dev) and (sys.errno is not errno.EPERM):  # ignore EPERM
-        print("FsQuota.sync: " + FsQuota.strerr(), file=sys.stderr)
-        print("Choose another file system - quotas not functional on this one", file=sys.stderr)
-
     else:
-        print("Quotas are present on this filesystem (sync ok)")
-        break
+        try:
+            FsQuota.sync(dev)
+            print("Quotas are present on this filesystem (sync ok)")
+            break
+
+        except FsQuota.error as e:
+            if (sys.errno is not errno.EPERM):  # ignore EPERM
+                print("FsQuota.sync failed: %s" % e, file=sys.stderr)
+                print("Choose another file system - quotas not functional on this one", file=sys.stderr)
+            else:
+                break
 
 ##
-##  call with one argument (uid defaults to getuid()
+##  Test quota query with one argument (uid defaults to getuid()
 ##
 
-uid_val = os.getuid() if is_group else os.getgid()
+uid_val = os.getgid() if is_group else os.getuid()
 print("\nQuery this fs with default %s (which is real %s) %d" % (n_uid_gid, n_uid_gid, uid_val))
 
-if is_group == 0:
-    qtup = FsQuota.query(dev)
-else:
-    qtup = FsQuota.query(dev, uid_val, is_group)
+try:
+    if is_group == 0:
+        qtup = FsQuota.query(dev)
+    else:
+        qtup = FsQuota.query(dev, uid_val, is_group)
 
-if qtup:
     print("Your usage and limits are %s\n" % fmt_quota_vals(qtup))
-else:
-    print("FsQuota.query(%s) failed: %s\n" % (dev, FsQuota.strerr()), file=sys.stderr)
+except FsQuota.error as e:
+    print("FsQuota.query(%s) failed: %s\n" % (dev, e), file=sys.stderr)
 
 
 ##
-##  call with two arguments
+##  Test quota query with two arguments
 ##
 
 while True:
@@ -112,53 +130,54 @@ while True:
     except:
         print("You have to enter a decimal 32-bit value here.")
 
-qtup = FsQuota.query(dev, uid_val, is_group)
-if qtup:
+try:
+    qtup = FsQuota.query(dev, uid_val, is_group)
     print("Usage and limits for %s %d are %s\n" % (n_uid_gid, uid_val, fmt_quota_vals(qtup)))
-else:
-    print("FsQuota.query(%s,%d,%d) failed: %s\n" % (dev, uid_val, is_group, FsQuota.strerr()), file=sys.stderr)
+except FsQuota.error as e:
+    print("FsQuota.query(%s,%d,%d) failed: %s\n" % (dev, uid_val, is_group, e), file=sys.stderr)
 
 
 ##
-##  get quotas via RPC
+##  Test querying quota via RPC
 ##
 
 if dev.startswith("/"):
     path = os.path.abspath(path)
     print("Query localhost:%s via RPC." % path)
 
-    if is_group == 0:
-        qtup = FsQuota.rpcquery('localhost', path)
-    else:
-        qtup = FsQuota.rpcquery('localhost', path, uid_val, is_group)
+    try:
+        if is_group == 0:
+            qtup = FsQuota.rpcquery('localhost', path)
+        else:
+            qtup = FsQuota.rpcquery('localhost', path, uid_val, is_group)
 
-    if qtup is not None:
         print("Your usage and limits are %s\n" % fmt_quota_vals(qtup))
-    else:
-        print("Failed to query localhost: " + FsQuota.strerr())
+    except FsQuota.error as e:
+        print("Failed to query localhost: %s" % e)
 
     print("\nQuery localhost via RPC for %s %d." % (n_uid_gid, uid_val))
 
-    qtup = FsQuota.rpcquery('localhost', path, uid_val, is_group)
-    if qtup:
+    try:
+        qtup = FsQuota.rpcquery('localhost', path, uid_val, is_group)
         print("Usage and limits for %s %d are %s\n" % (n_uid_gid, uid_val, fmt_quota_vals(qtup)))
-    else:
-        print("Failed to query RPC: " + FsQuota.strerr())
+    except FsQuota.error as e:
+        print("Failed to query via RPC: %s" % e)
         print("Retrying with fake authentication for UID %d." % uid_val)
         FsQuota.rpcauth(uid_val);
-        qtup = FsQuota.rpcquery('localhost', path, uid_val, is_group)
-        FsQuota.rpcauth();
-        if qtup:
+        try:
+            qtup = FsQuota.rpcquery('localhost', path, uid_val, is_group)
             print("Usage and limits for %s %d are %s\n" % (n_uid_gid, uid_val, fmt_quota_vals(qtup)))
-        else:
-            print("Failed to query RPC again")
+        except FsQuota.error as e:
+            print("Failed to query RPC again: %s" % e)
+
+        FsQuota.rpcauth();
 
 else:
     print("Skipping RPC query test - already done above.")
 
 
 ##
-##  set quota block & file limits for user
+##  Test setting quota limits
 ##
 
 while True:
@@ -187,17 +206,25 @@ if path:
 
     if bs is not None:
         dev = FsQuota.getqcarg(path)
-        if FsQuota.setqlim(dev, uid_val, bs,bh,fs,fh, 1) == 0:
+        try:
+            FsQuota.setqlim(dev, uid_val, bs,bh,fs,fh, 1, is_group)
             print("Quota set successfully for %s %d" % (n_uid_gid, uid_val))
-        else:
-            print("Failed to set quota: " + FsQuota.strerr(), file=sys.stderr)
+
+            try:
+                qtup = FsQuota.query(dev, uid_val, is_group)
+                print("Read-back modified limits: %s\n" % fmt_quota_vals(qtup))
+            except FsQuota.error as e:
+                print("Failed to read back quota change limits: %s" % e)
+        except FsQuota.error as e:
+            print("Failed to set quota: %s" % e, file=sys.stderr)
 
 ##
-##  Force immediate update on disk
+##  Test quota sync to disk
 ##
 
 match = re.match(r"^[^/]+:", dev)
 if not match:
-    if not FsQuota.sync(dev) == 0:
-        if sys.errno != errno.EPERM:
-            print("FsQuota.sync: " + FsQuota.strerr(), file=sys.stderr)
+    try:
+        FsQuota.sync(dev)
+    except FsQuota.error as e:
+        print("FsQuota.sync failed: %s" % e, file=sys.stderr)

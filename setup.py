@@ -52,7 +52,8 @@ elif (re.match(r"^BSD\/OS 2", osr) or
       re.match(r"^NetBSD", osr)    or
       re.match(r"^OpenBSD", osr))  : config='bsd.h'
 else:
-    print("FATAL: No appropriate hints found for this OS/revision: '%s' - see INSTALL" % os, file=sys.stderr)
+    print("FATAL: No appropriate hints found for this OS/revision: \"" + osr + "\"\n" +
+          "Please see instructions in file INSTALL", file=sys.stderr)
     exit(1)
 
 config = "hints/" + config
@@ -138,6 +139,11 @@ class MyClean(install):
 if not os.path.isfile("myconfig.h"):
     os.symlink(config, "myconfig.h")
 
+# Disable use of named tuples in C module as this causes crash in GC:
+# "Fatal Python error: type_traverse() called for non-heap type"
+# most likely known issue: https://bugs.python.org/issue28709 - fixed in 3.8
+extradef += [('NAMED_TUPLE_GC_BUG', 1)]
+
 ext = Extension('FsQuota',
                 sources       = ['src/FsQuota.c'] + extrasrc,
                 include_dirs  = ['.'] + extrainc,
@@ -147,21 +153,18 @@ ext = Extension('FsQuota',
                 undef_macros  = ["NDEBUG"]   # TODO not for release
                )
 
+this_directory = os.path.abspath(os.path.dirname(__file__))
+with open(os.path.join(this_directory, 'README.md'), encoding='utf-8') as fh:
+    long_description = fh.read()
+
 setup(name='FsQuota',
       version='0.0.1',
       description='Interface to file system quotas on UNIX platforms',
-      long_description=
-            "The Python file-system quota module allows accessing file system quotas "+
-            "on UNIX platforms. This works both for locally mounted file systems and "+
-            "network file systems (via RPC, i.e. Remote Procedure Call) on Linux, AIX, "+
-            "the BSDs, HP-UX, IRIX and Solaris. The interface is designed to be "+
-            "independent of UNIX flavours as well as file system types.",
+      long_description=long_description,
       long_description_content_type="text/markdown",
       author='T. Zoerner',
       author_email='tomzo@users.sourceforge.net',
       url='https://github.com/tomzox/Python-Quota',
-      ext_modules=[ext],
-      platforms=[],
       classifiers=[
           'Development Status :: 3 - Alpha',
           "Programming Language :: C",
@@ -178,5 +181,7 @@ setup(name='FsQuota',
           "Operating System :: UNIX",
           "License :: OSI Approved :: GNU General Public License v2 or later (GPLv2+)"
          ],
+      platforms=['posix'],
+      ext_modules=[ext],
       cmdclass={'clean': MyClean},
       )

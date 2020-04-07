@@ -200,21 +200,17 @@ Close the mount table. Should be called after the last use of
 B<FsQuota::getmntent> to free possibly allocated file handles and memory.
 Always returns undef.
 
-=item I<FsQuota::strerr()>
-
-Translates B<errno> to a quota-specific error text. You should always
-use this function to output error messages, since the normal messages
-don't always make sense for quota errors
-(e.g. I<ESRCH>: B<No such process>, here: B<No quota for this user>)
-
-Note that this function only returns a defined result if you called a
-Quota command directly before which returned an error indication.
-
 =back
 
-=head1 RETURN VALUES
+=head1 ERRORS
 
-Functions that are supposed return lists, return I<None> upon errors.
+Quota query and limit functions raise I<FsQuota.error> upon errors.  The class
+contains the numerical error code (copied from I<errno> in most cases) and an
+error message (smilar B<strerror(3)>, however with some adaptions since the
+normal messages don't always make sense for quota errors, e.g. I<ESRCH>: B<No
+such process>, here: B<No quota for this user>)
+
+
 B<FsQuota::endmntent> always returns I<None>.  All other functions
 return 0 upon success, non-zero integer otherwise. As usual B<errno>
 contains the error code, which should be translated using B<FsQuota::strerr>.
