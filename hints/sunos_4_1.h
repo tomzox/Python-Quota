@@ -19,6 +19,7 @@
 
 #include <strings.h>
 #include <stdio.h>
+#include <errno.h>
 
 #define Q_DIV(X) ((X) / 2)
 #define Q_MUL(X) ((X) * 2)

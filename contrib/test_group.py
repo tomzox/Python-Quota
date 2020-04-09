@@ -37,15 +37,15 @@ def fmt_quota_vals(qtup):
 
 try:
     dev = FsQuota.getqcarg(path)
-    print("Using device/argument \"dev\"")
+    print("Using device/argument \"%s\"" % dev)
 
-    print("Checking quota sync (may fail if quotas not enabled)")
+    print("Checking quota sync (may fail if quotas not enabled)...")
     FsQuota.sync(dev)
 
     try:
-        print("\nQuery quotas for %s %d" % (typnam, ugid))
+        print("Query quotas for %s %d" % (typnam, ugid))
         qtup = FsQuota.query(dev, ugid, dogrp)
-        print("Quota usage and limits for %s %d are %s\n" % (typnam, ugid, fmt_quota_vals(qtup)))
+        print("Quota usage and limits for %s %d are %s" % (typnam, ugid, fmt_quota_vals(qtup)))
 
     except FsQuota.error as e:
         print("Query %s %d failed: %s" % (typnam, ugid, e), file=sys.stderr)
@@ -54,12 +54,13 @@ try:
     ##  set quota block & file limits for user
     ##
 
+    print("Setting new quota limits...")
     FsQuota.setqlim(dev, ugid, *setq, 1, dogrp)
     print("Quotas set successfully for %s %d" % (typnam, ugid))
 
     print("Reading back new quota limits...")
     qtup = FsQuota.query(dev, ugid, dogrp)
-    print("Quota usage and limits for %s %d are %s\n" % (typnam, ugid, fmt_quota_vals(qtup)))
+    print("Quota usage and limits for %s %d are %s" % (typnam, ugid, fmt_quota_vals(qtup)))
 
     print("Finally checking quota sync again")
     FsQuota.sync(dev)

@@ -22,6 +22,9 @@ import subprocess
 import shutil
 import re
 
+this_directory = os.path.abspath(os.path.dirname(__file__))
+myconfig_h = os.path.join(this_directory, 'myconfig.h')
+
 # ----------------------------------------------------------------------------
 # Note most configuration (including compile-switches) is done via includes
 # in the hints/ directory. The following only manages source lists and libs
@@ -59,8 +62,8 @@ else:
 config = "hints/" + config
 print("Using %s for myconfig.h" % config)
 
-if (    os.path.isfile("myconfig.h")
-    and (not os.path.islink("myconfig.h") or not (os.readlink("myconfig.h") == config))):
+if (    os.path.isfile(myconfig_h)
+    and (not os.path.islink(myconfig_h) or not (os.readlink(myconfig_h) == config))):
     print("\nFATAL: myconfig.h already exists.\n\n" +
          "You need to do a \"make clean\" before configuring for a new platform.\n" +
          "If that doesn't help, remove myconfig.h manually.")
@@ -120,24 +123,35 @@ if re.match(r"^Linux", osr):
 # ----------------------------------------------------------------------------
 
 class MyClean(install):
+    cwd = os.path.abspath(os.path.dirname(__file__))
+    def rmfile(self, apath):
+        p = os.path.join(MyClean.cwd, apath)
+        if os.path.isfile(p):
+            os.remove(p)
+    def rmtree(self, apath):
+        p = os.path.join(MyClean.cwd, apath)
+        if os.path.isdir(p):
+            shutil.rmtree(p)
     def run(self):
-        if os.path.isdir('build'):
-            shutil.rmtree('build')
-        if os.path.isdir('FsQuota.egg-info'):
-            shutil.rmtree('FsQuota.egg-info')
-        if os.path.isdir('__pycache__'):
-            shutil.rmtree('__pycache__')
-        if os.path.isfile('myconfig.h'):
-            os.remove('myconfig.h')
-        for name in os.listdir('.'):
-            if re.match(r"^FsQuota\..*\.so$", name):
-                os.remove(name)
+        # files created by configuration stage
+        self.rmfile('myconfig.h')
+        # files created by build stage
+        self.rmtree('build')
+        # files created by test stage
+        self.rmtree('FsQuota.egg-info')
+        self.rmtree('__pycache__')
+        for name in os.listdir(MyClean.cwd):
+            if re.match(r"^.*\.so$", name):
+                os.remove(os.path.join(MyClean.cwd, name))
 
 # ----------------------------------------------------------------------------
 # Finally execute the setup command
 
-if not os.path.isfile("myconfig.h"):
-    os.symlink(config, "myconfig.h")
+with open(os.path.join(this_directory, 'README.md'), encoding='utf-8') as fh:
+    long_description = fh.read()
+
+if not os.path.isfile(myconfig_h):
+    os.symlink(config, myconfig_h)
 
 # Disable use of named tuples in C module as this causes crash in GC:
 # "Fatal Python error: type_traverse() called for non-heap type"
@@ -153,12 +167,8 @@ ext = Extension('FsQuota',
                 undef_macros  = ["NDEBUG"]   # TODO not for release
                )
 
-this_directory = os.path.abspath(os.path.dirname(__file__))
-with open(os.path.join(this_directory, 'README.md'), encoding='utf-8') as fh:
-    long_description = fh.read()
-
 setup(name='FsQuota',
-      version='0.0.1',
+      version='0.0.2',
       description='Interface to file system quotas on UNIX platforms',
       long_description=long_description,
       long_description_content_type="text/markdown",
@@ -184,4 +194,4 @@ setup(name='FsQuota',
       platforms=['posix'],
       ext_modules=[ext],
       cmdclass={'clean': MyClean},
-      )
+     )

@@ -39,18 +39,16 @@ FsQuota - Interface to file system quotas on UNIX platforms
 
     arg = FsQuota::getqcarg([path])
 
-    FsQuota::setmntent()
-    (dev, path, type, opts) = FsQuota::getmntent()
-    FsQuota::endmntent()
+    for dev, path, type, opts in FsQuota::getmntent(): ...
 
 =head1 DESCRIPTION
 
 The B<FsQuota> module provides access to file system quotas.
 The quotactl system call or ioctl is used to query or set quotas
 on the local host, or queries are submitted via RPC to a remote host.
-Mount tables can be parsed with B<getmntent> and paths can be
+Mount tables can be iterated with B<getmntent> and paths can be
 translated to device files (or whatever the actual B<quotactl>
-implementations needs as argument) of the according file system.
+implementations needs as argument) of the respective file system.
 
 =head2 Functions
 
@@ -176,49 +174,49 @@ implementations of the quotactl functionality. Hence it's important for
 compatibility to always use this module function and not really pass
 a device file to B<FsQuota::query> (see also above at I<FsQuota::query>).
 
-=item I<FsQuota::setmntent()>
+=item I<iterator = FsQuota::getmntent()>
 
-Opens or resets the mount table. This is required before the first
-invocation of B<FsQuota::getmntent>.
+The function returns an iterator that can be used to list all entries
+in the mount table. Each returned object is a tuple with the following
+entries of type string:
 
-Note: on some systems there is no equivalent function in the C library.
-But you still have to call this module procedure for initialization of
-module-internal variables.
+=over 8
 
-=item I<(dev, path, type, opts) = FsQuota::getmntent()>
+=item [0] mnt_fsname: name of mounted filesystem (e.g. device name)
 
-Returns the next entry in the system mount table. This table contains
-information about all currently mounted (local or remote) file systems.
-The format and location of this table (e.g. B</etc/mtab>) vary from
-system to system. This function is provided as a compatible way to
-parse it. (On some systems, like B<OSF/1>, this table isn't
-accessible as a file at all, i.e. only via B<FsQuota::getmntent>).
+=item [1] mnt_dir:    filesystem path prefix (aka mount point)
 
-=item I<FsQuota::endmntent()>
+=item [2] mnt_type:   mount type (aka file system type)
 
-Close the mount table. Should be called after the last use of
-B<FsQuota::getmntent> to free possibly allocated file handles and memory.
-Always returns undef.
+=item [3] mnt_opts:   mount options, separated by colon
 
 =back
 
-=head1 ERRORS
+Note the mount table contains information about all currently mounted
+(local or remote) file systems.  The format and location of this table
+varies from system to system (e.g. it may be in file B</etc/mtab>).
+This iterator provides a portable way to read it. (On some systems,
+like B<OSF/1>, this table isn't accessible as a file at all, i.e. only
+via C library interface B<getmntent(3)>). Internally, the iterator will
+call I<setmntent(3)> or the equivalent of your platform upon initialization,
+call I<getmntent(3)> during iteration, and call I<endmntent(3)> upon
+deallocation.
 
-Quota query and limit functions raise I<FsQuota.error> upon errors.  The class
-contains the numerical error code (copied from I<errno> in most cases) and an
-error message (smilar B<strerror(3)>, however with some adaptions since the
-normal messages don't always make sense for quota errors, e.g. I<ESRCH>: B<No
-such process>, here: B<No quota for this user>)
+=back
 
+=head1 ERROR HANDLING
 
-B<FsQuota::endmntent> always returns I<None>.  All other functions
-return 0 upon success, non-zero integer otherwise. As usual B<errno>
-contains the error code, which should be translated using B<FsQuota::strerr>.
+All the functions raise exception I<FsQuota.error> upon errors. The
+exception class is a tuple that contains firstly the numerical error code
+(copied from I<errno> in most cases) and secondly a derived error message.
+The latter is smilar to B<strerror(3)>, however with some adaptions for
+quota operations, since the normal messages don't always make sense for
+quota errors (e.g. B<ESRCH>: I<No such process>, here:
+I<No quota for this user>)
 
 =head1 EXAMPLES
 
-An example for each function can be found in the test script
-I<test.pl>. See also the contrib directory for more examples.
+Examples for all functions can be found in the test scripts.
 
 =head1 AUTHORS
 

@@ -24,6 +24,7 @@
 
 #include <string.h>
 #include <stdio.h>
+#include <errno.h>
 
 /* definitions from sys/quota.h */
 #define USRQUOTA  0             /* element used for user quotas */

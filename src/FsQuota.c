@@ -1,5 +1,5 @@
 // ------------------------------------------------------------------------
-// FsQuota.c - Copyright (C) 1995-2020 T. Zoerner
+// Copyright (C) 1995-2020 T. Zoerner
 // ------------------------------------------------------------------------
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by the
@@ -30,6 +30,10 @@ static PyObject * FsQuotaError;
 #include "include/vxquotactl.h"
 #endif
 
+/*
+ * This data structure encapsulates the entire internal state of an ongoing
+ * mount table iteration.
+ */
 typedef struct
 {
 #ifndef AIX
@@ -53,7 +57,6 @@ typedef struct
 #endif
 } T_STATE_MNTENT;
 
-static T_STATE_MNTENT module_state_mntent;
 
 #define RPC_DEFAULT_TIMEOUT 4000
 
@@ -63,7 +66,7 @@ static struct
     char            use_tcp;
     unsigned short  port;
     unsigned        timeout;
-} quota_rpc_cfg = {FALSE, 0, 4000};
+} quota_rpc_cfg = {FALSE, 0, RPC_DEFAULT_TIMEOUT};
 
 static struct
 {
@@ -1360,22 +1363,81 @@ void my_endmntent(T_STATE_MNTENT * state)
 
 // ----------------------------------------------------------------------------
 
-static PyObject *
-FsQuota_setmntent(PyObject *self, PyObject *args)  // METH_NOARGS
+typedef struct
 {
-    if (my_setmntent(&module_state_mntent) == 0)
-        return Py_None;
-    else
+    PyObject_HEAD
+    T_STATE_MNTENT mntent;
+    int iterIndex;
+} MntTab_ObjectType;
+
+static PyObject *
+MntTab_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
+{
+    MntTab_ObjectType *self;
+    self = (MntTab_ObjectType *) type->tp_alloc(type, 0);
+
+    if (my_setmntent(&self->mntent) != 0)
+    {
+        Py_DECREF(self);
         return FsQuota_OsException(errno, "setmntent");
+    }
+    self->iterIndex = 0;
+    return (PyObject *) self;
+}
+
+static void
+MntTab_dealloc(MntTab_ObjectType *self)
+{
+    my_endmntent(&self->mntent);
+
+    Py_TYPE(self)->tp_free((PyObject *) self);
+}
+
+static int
+MntTab_init(MntTab_ObjectType *self, PyObject *args, PyObject *kwds)
+{
+    char *kwlist[] = {NULL};
+
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "", kwlist))
+        return -1;
+
+    if (self->iterIndex != 0)
+    {
+        // re-initialize iterator
+        if (my_setmntent(&self->mntent) != 0)
+        {
+            FsQuota_OsException(errno, "setmntent");
+            return -1;
+        }
+        self->iterIndex = 0;
+    }
+
+    return 0;
 }
 
 static PyObject *
-FsQuota_getmntent(PyObject *self, PyObject *args)  // METH_NOARGS
+MntTab_Repr(MntTab_ObjectType *self)
+{
+    if (self->iterIndex >= 0)
+        return PyUnicode_FromFormat("<FsQuota.MntTab iterator at index %d>", self->iterIndex);
+    else
+        return PyUnicode_FromFormat("<FsQuota.MntTab iterator at EOL>");
+}
+
+static PyObject *
+MntTab_Iter(MntTab_ObjectType *self)
+{
+    Py_INCREF(self);
+    return (PyObject *) self;
+}
+
+static PyObject *
+MntTab_IterNext(MntTab_ObjectType *self)
 {
     char *str_buf[4];
-    PyObject * RETVAL = Py_None;
+    PyObject * RETVAL = NULL;
 
-    if (my_getmntent(&module_state_mntent, str_buf) == 0)
+    if ((self->iterIndex >= 0) && my_getmntent(&self->mntent, str_buf) == 0)
     {
 #if defined (NAMED_TUPLE_GC_BUG)
         RETVAL = Py_BuildValue("ssss", str_buf[0], str_buf[1], str_buf[2], str_buf[3]);
@@ -1390,18 +1452,54 @@ FsQuota_getmntent(PyObject *self, PyObject *args)  // METH_NOARGS
         if (str_buf[3] != NULL)
             PyStructSequence_SetItem(RETVAL, 3, PyUnicode_FromString(str_buf[3]));
 #endif
+        self->iterIndex += 1;
     }
-    // else: do not throw exception, as this occurs regularily at end of list
+    else
+    {
+        PyErr_SetNone(PyExc_StopIteration);
+        self->iterIndex = -1;
+    }
     return RETVAL;
 }
 
-static PyObject *
-FsQuota_endmntent(PyObject *self, PyObject *args)  // METH_NOARGS
-{
-    my_endmntent(&module_state_mntent);
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-    return Py_None;
-}
+static PyTypeObject MntTabTypeDef =
+{
+    PyVarObject_HEAD_INIT(NULL, 0)
+    .tp_name = "FsQuota.MntTab",
+    .tp_doc = "Mount table iterator object",
+    .tp_basicsize = sizeof(MntTab_ObjectType),
+    .tp_itemsize = 0,
+    .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,
+    .tp_new = MntTab_new,
+    .tp_init = (initproc) MntTab_init,
+    .tp_dealloc = (destructor) MntTab_dealloc,
+    .tp_repr = (PyObject * (*)(PyObject*)) MntTab_Repr,
+    .tp_iter = (PyObject * (*)(PyObject*)) MntTab_Iter,
+    .tp_iternext = (PyObject * (*)(PyObject*)) MntTab_IterNext,
+    //.tp_members = MntTab_Members,
+    //.tp_methods = MntTab_MethodsDef,
+};
+
+#if !defined (NAMED_TUPLE_GC_BUG)
+static PyStructSequence_Field MntEntType_Members[] =
+{
+    { "mnt_fsname", NULL },
+    { "mnt_dir", NULL },
+    { "mnt_type", NULL },
+    { "mnt_opts", NULL },
+    { NULL, NULL }
+};
+
+static PyStructSequence_Desc MntEntType_Desc =
+{
+    "mntent",
+    "Mount table entry",
+    MntEntType_Members,
+    4
+};
+#endif
 
 // ----------------------------------------------------------------------------
 
@@ -1527,10 +1625,6 @@ FsQuota_getqcarg(PyObject *self, PyObject *args)
 
 static PyMethodDef FsQuota_Methods[] =
 {
-    {"setmntent", FsQuota_setmntent, METH_NOARGS,  "Init mount table iteration"},
-    {"getmntent", FsQuota_getmntent, METH_NOARGS,  "Get next entry from mount table"},
-    {"endmntent", FsQuota_endmntent, METH_NOARGS,  "End mount table iteration"},
-
     {"getqcarg",  FsQuota_getqcarg,  METH_VARARGS, "Get device parameter for quota op"},
 
     {"query",     FsQuota_query,     METH_VARARGS, "Query quota limits for a given user/group"},
@@ -1547,50 +1641,21 @@ static PyMethodDef FsQuota_Methods[] =
 static struct PyModuleDef FsQuota_module =
 {
     PyModuleDef_HEAD_INIT,
-    "FsQuota",                  // name of module
-    NULL,                       // module documentation, may be NULL
-    -1,                         // size of per-interpreter state of the module
-                                //  or -1 if the module keeps state in global variables.
-    FsQuota_Methods
+    .m_name = "FsQuota",
+    .m_doc = NULL,
+    .m_size = -1,
+    .m_methods = FsQuota_Methods
 };
-
-#if !defined (NAMED_TUPLE_GC_BUG)
-// TODO same for quota query & setqlim
-
-static PyStructSequence_Field FsQuota_MntEntType_Members[] =
-{
-    { "mnt_fsname", NULL },
-    { "mnt_dir", NULL },
-    { "mnt_type", NULL },
-    { "mnt_opts", NULL },
-    { NULL, NULL }
-};
-static PyStructSequence_Desc FsQuota_MntEntType_Desc =
-{
-    "mntent",
-    "Mount table entry",
-    FsQuota_MntEntType_Members,
-    4
-};
-#endif
 
 PyMODINIT_FUNC
 PyInit_FsQuota(void)
 {
-    PyObject * module;
+    if (PyType_Ready(&MntTabTypeDef) < 0)
+        return NULL;
 
-    module = PyModule_Create(&FsQuota_module);
+    PyObject * module = PyModule_Create(&FsQuota_module);
     if (module == NULL)
         return NULL;
-
-#if !defined (NAMED_TUPLE_GC_BUG)
-    FsQuota_MntEntType = PyStructSequence_NewType(&FsQuota_MntEntType_Desc);
-    if (FsQuota_MntEntType == NULL)
-    {
-        Py_DECREF(module);
-        return NULL;
-    }
-#endif
 
     FsQuotaError = PyErr_NewException("FsQuota.error", NULL, NULL);
     Py_XINCREF(FsQuotaError);
@@ -1602,5 +1667,27 @@ PyInit_FsQuota(void)
         return NULL;
     }
 
+    Py_INCREF(&MntTabTypeDef);
+    if (PyModule_AddObject(module, "getmntent", (PyObject *) &MntTabTypeDef) < 0)
+    {
+        Py_DECREF(&MntTabTypeDef);
+        Py_XDECREF(FsQuotaError);
+        Py_CLEAR(FsQuotaError);
+        Py_DECREF(module);
+        return NULL;
+    }
+
+#if !defined (NAMED_TUPLE_GC_BUG)
+    FsQuota_MntEntType = PyStructSequence_NewType(&MntEntType_Desc);
+    if (FsQuota_MntEntType == NULL)
+    {
+        Py_DECREF(&MntTabTypeDef);
+        Py_XDECREF(FsQuotaError);
+        Py_CLEAR(FsQuotaError);
+        Py_DECREF(module);
+        return NULL;
+    }
+#endif
+
     return module;
- }
+}

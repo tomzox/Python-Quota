@@ -13,15 +13,8 @@ import sys
 import FsQuota
 
 try:
-    FsQuota.setmntent()
-    while True:
-        ent = FsQuota.getmntent()
-        if ent is None: break
-
-        #print("# %s # %s # %s #" % (ent.mnt_fsname, ent.mnt_dir, ent.mnt_type))
-        print("# %s # %s # %s # %s #" % (ent[0], ent[1], ent[2], ent[3]))
-
-    FsQuota.endmntent()
+    for fsname, path, fstyp, opt in FsQuota.getmntent():
+        print("# %s # %s # %s # %s #" % (fsname, path, fstyp, opt))
 
 except FsQuota.error as e:
     print("ERROR: %s" % e, file=sys.stderr)

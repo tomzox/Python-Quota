@@ -15,20 +15,12 @@ from stat import *
 import FsQuota
 
 try:
-    FsQuota.setmntent()
-    while True:
-        ent = FsQuota.getmntent()
-        if ent is None:
-            break
-
-        (fsname, path, fstyp, opt) = ent
+    for fsname, path, fstyp, opt in FsQuota.getmntent():
         qcarg = FsQuota.getqcarg(path)
         if qcarg is None:
             qcarg = "*UNDEF*"
         print("%s # %s # %s # %s # %d # %s #"
                     % (fsname, path, fstyp, opt, os.stat(path).st_dev, qcarg))
-
-    FsQuota.endmntent();
 
 except FsQuota.error as e:
     print("ERROR: %s" % e, file=sys.stderr)

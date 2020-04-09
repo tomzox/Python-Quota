@@ -56,6 +56,7 @@
 #include <netdb.h>
 
 #include <stdio.h>
+#include <errno.h>
 #include <string.h>
 
 #define Q_DIV(X) ((X) / 2)

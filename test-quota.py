@@ -31,11 +31,17 @@ if not sys.stdin.isatty() or not sys.stdout.isatty():
 # Helper function for printing quota query results
 #
 def fmt_quota_vals(qtup):
-    tm = time.localtime(qtup[3])
-    bt_str = ("%04d-%02d-%02d/%02d:%02d" % (tm.tm_year, tm.tm_mon, tm.tm_mday, tm.tm_hour, tm.tm_min))
+    if qtup[1] or qtup[2]:
+        tm = time.localtime(qtup[3])
+        bt_str = ("%04d-%02d-%02d/%02d:%02d" % (tm.tm_year, tm.tm_mon, tm.tm_mday, tm.tm_hour, tm.tm_min))
+    else:
+        bt_str = "*n/a*"
 
-    tm = time.localtime(qtup[7])
-    ft_str = ("%04d-%02d-%02d/%02d:%02d" % (tm.tm_year, tm.tm_mon, tm.tm_mday, tm.tm_hour, tm.tm_min))
+    if qtup[5] or qtup[6]:
+        tm = time.localtime(qtup[7])
+        ft_str = ("%04d-%02d-%02d/%02d:%02d" % (tm.tm_year, tm.tm_mon, tm.tm_mday, tm.tm_hour, tm.tm_min))
+    else:
+        ft_str = "*n/a*"
 
     return ("%d (%d,%d,%s) %d (%d,%d,%s)" %
                 (qtup[0], qtup[1], qtup[2], bt_str, qtup[4], qtup[5], qtup[6], ft_str))

@@ -32,6 +32,9 @@
 /* Needed for definition of type FILE for set/getmntent(3) routines */
 #include <stdio.h>
 
+/* Needed for global variable "errno" */
+#include <errno.h>
+
 /* Needed (at least) for memcpy */
 #include <string.h>
 
