@@ -1,0 +1,9 @@
+include src/*
+include hints/*
+include contrib/*
+include doc/*
+include CHANGES
+include INSTALL
+include LICENSE
+include test-quota.py
+exclude myconfig.h

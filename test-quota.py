@@ -63,15 +63,17 @@ n_uid_gid = "GID" if is_group else "UID"
 #
 # Ask user for a path to a file system with quotas
 #
+qObj = None
 while True:
     path = input("\nEnter path to get quota for (NFS possible; default '.'): ")
     if path == "":
         path = "."
 
-    while True:
-        dev = FsQuota.getqcarg(path)
-        if dev is None:
-            print("%s: mount point not found" % path, file=sys.stderr)
+    while qObj is None:
+        try:
+            qObj = FsQuota.quota(path)
+        except FsQuota.error as e:
+            print("%s: %s" % (path, e), file=sys.stderr)
             if os.path.isdir(path) and not path.endswith("/."):
                 #
                 # try to append "/." to get past automounter fs
@@ -79,23 +81,22 @@ while True:
                 path += "/."
                 print("Trying %s instead..." % path)
                 # continue loop
-            else: break
-        else: break
+            else:
+                break
 
-    if dev is None:
+    if qObj is None:
         continue
-    print("Using device/argument \"%s\"" % dev)
+    print("Using device/argument \"%s\"" % qObj.dev)
 
     ##
     ##  Check if quotas are present on this filesystem
     ##
-    match = re.match(r"^[^/]+:", dev)
-    if match:
+    if qObj.is_nfs:
         print("Is a remote file system")
         break
     else:
         try:
-            FsQuota.sync(dev)
+            qObj.sync()
             print("Quotas are present on this filesystem (sync ok)")
             break
 
@@ -115,13 +116,13 @@ print("\nQuery this fs with default %s (which is real %s) %d" % (n_uid_gid, n_ui
 
 try:
     if is_group == 0:
-        qtup = FsQuota.query(dev)
+        qtup = qObj.query()
     else:
-        qtup = FsQuota.query(dev, uid_val, is_group)
+        qtup = qObj.query(uid_val, is_group)
 
     print("Your usage and limits are %s\n" % fmt_quota_vals(qtup))
 except FsQuota.error as e:
-    print("FsQuota.query(%s) failed: %s\n" % (dev, e), file=sys.stderr)
+    print("FsQuota.query(%s) failed: %s\n" % (qObj.dev, e), file=sys.stderr)
 
 
 ##
@@ -137,25 +138,27 @@ while True:
         print("You have to enter a decimal 32-bit value here.")
 
 try:
-    qtup = FsQuota.query(dev, uid_val, is_group)
+    qtup = qObj.query(uid_val, is_group)
     print("Usage and limits for %s %d are %s\n" % (n_uid_gid, uid_val, fmt_quota_vals(qtup)))
 except FsQuota.error as e:
-    print("FsQuota.query(%s,%d,%d) failed: %s\n" % (dev, uid_val, is_group, e), file=sys.stderr)
+    print("FsQuota.query(%s,%d,%d) failed: %s\n" % (qObj.dev, uid_val, is_group, e), file=sys.stderr)
 
 
 ##
 ##  Test querying quota via RPC
 ##
 
-if dev.startswith("/"):
+if qObj.dev.startswith("/"):
     path = os.path.abspath(path)
     print("Query localhost:%s via RPC." % path)
 
+    qObj = FsQuota.quota(path, rpc_host="localhost")
+
     try:
         if is_group == 0:
-            qtup = FsQuota.rpcquery('localhost', path)
+            qtup = qObj.query()
         else:
-            qtup = FsQuota.rpcquery('localhost', path, uid_val, is_group)
+            qtup = qObj.query(uid_val, is_group)
 
         print("Your usage and limits are %s\n" % fmt_quota_vals(qtup))
     except FsQuota.error as e:
@@ -164,19 +167,19 @@ if dev.startswith("/"):
     print("\nQuery localhost via RPC for %s %d." % (n_uid_gid, uid_val))
 
     try:
-        qtup = FsQuota.rpcquery('localhost', path, uid_val, is_group)
+        qtup = qObj.query(uid_val, is_group)
         print("Usage and limits for %s %d are %s\n" % (n_uid_gid, uid_val, fmt_quota_vals(qtup)))
     except FsQuota.error as e:
         print("Failed to query via RPC: %s" % e)
         print("Retrying with fake authentication for UID %d." % uid_val)
-        FsQuota.rpcauth(uid_val);
+        qObj.rpc_opt(auth_uid=uid_val);
         try:
-            qtup = FsQuota.rpcquery('localhost', path, uid_val, is_group)
+            qtup = qObj.query(uid_val, is_group)
             print("Usage and limits for %s %d are %s\n" % (n_uid_gid, uid_val, fmt_quota_vals(qtup)))
         except FsQuota.error as e:
             print("Failed to query RPC again: %s" % e)
 
-        FsQuota.rpcauth();
+        qObj.rpc_opt(auth_uid=-1, auth_gid=-1);
 
 else:
     print("Skipping RPC query test - already done above.")
@@ -191,17 +194,17 @@ while True:
     if path == "":
         break
 
-    dev = FsQuota.getqcarg(path)
-    if dev:
-        match = re.match(r"^[^/]+:", dev)
-        if match:
+    try:
+        qObj = FsQuota.quota(path)
+        if qObj.is_nfs:
             print("Heads-up: Trying to set quota for remote path will fail")
         break
-    else:
+    except FsQuota.error as e:
         print("%s: mount point not found\n" % path, file=sys.stderr)
 
 if path:
     bs = None
+
     while True:
         line = input("Enter new quota limits bs,bh,fs,fh for %s %d (empty to abort): " % (n_uid_gid, uid_val))
         match = re.match(r"^\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*$", line)
@@ -211,13 +214,12 @@ if path:
         print("Invalid parameters: expect 4 comma-separated numerical values")
 
     if bs is not None:
-        dev = FsQuota.getqcarg(path)
         try:
-            FsQuota.setqlim(dev, uid_val, bs,bh,fs,fh, 1, is_group)
+            qObj.setqlim(uid_val, bs,bh,fs,fh, 1, is_group)
             print("Quota set successfully for %s %d" % (n_uid_gid, uid_val))
 
             try:
-                qtup = FsQuota.query(dev, uid_val, is_group)
+                qtup = qObj.query(uid_val, is_group)
                 print("Read-back modified limits: %s\n" % fmt_quota_vals(qtup))
             except FsQuota.error as e:
                 print("Failed to read back quota change limits: %s" % e)
@@ -228,9 +230,8 @@ if path:
 ##  Test quota sync to disk
 ##
 
-match = re.match(r"^[^/]+:", dev)
-if not match:
+if not qObj.is_nfs:
     try:
-        FsQuota.sync(dev)
+        qObj.sync()
     except FsQuota.error as e:
         print("FsQuota.sync failed: %s" % e, file=sys.stderr)

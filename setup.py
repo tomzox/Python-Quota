@@ -22,6 +22,10 @@ import subprocess
 import shutil
 import re
 
+if sys.version_info[0] != 3:
+    print("This script requires Python 3")
+    exit()
+
 this_directory = os.path.abspath(os.path.dirname(__file__))
 myconfig_h = os.path.join(this_directory, 'myconfig.h')
 
@@ -143,6 +147,9 @@ class MyClean(install):
         for name in os.listdir(MyClean.cwd):
             if re.match(r"^.*\.so$", name):
                 os.remove(os.path.join(MyClean.cwd, name))
+        self.rmfile('core')
+        # files created by sdist stage
+        self.rmtree('dist')
 
 # ----------------------------------------------------------------------------
 # Finally execute the setup command

@@ -16,9 +16,12 @@ import FsQuota
 
 try:
     for fsname, path, fstyp, opt in FsQuota.getmntent():
-        qcarg = FsQuota.getqcarg(path)
-        if qcarg is None:
+        try:
+            qObj = FsQuota.quota(path)
+            qcarg = qObj.dev;
+        except:
             qcarg = "*UNDEF*"
+
         print("%s # %s # %s # %s # %d # %s #"
                     % (fsname, path, fstyp, opt, os.stat(path).st_dev, qcarg))
 

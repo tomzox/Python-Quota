@@ -20,60 +20,78 @@ FsQuota - Interface to file system quotas on UNIX platforms
 
     import FsQuota
 
-    (block_curr, block_soft, block_hard, block_timelimit,
-     inode_curr, inode_soft, inode_hard, inode_timelimit) =
-    FsQuota::query(dev [,uid [,kind]])
+    qObj = FsQuota.quota(path [,rpc_host=hostname])
 
     (block_curr, block_soft, block_hard, block_timelimit,
      inode_curr, inode_soft, inode_hard, inode_timelimit) =
-    FsQuota::rpcquery(host, path [,uid [,kind]])
+    qObj.query([uid [,kind]])
 
-    FsQuota::rpcpeer([port [,use_tcp [,timeout]]])
-    
-    FsQuota::rpcauth([uid [,gid [,hostname]]])
+    qObj.setqlim(uid, block_soft, block_hard,
+                      inode_soft, inode_hard [,tlo [,kind]])
 
-    FsQuota::setqlim(dev, uid, block_soft, block_hard,
-                   inode_soft, inode_hard [,tlo [,kind]])
+    qObj.sync()
 
-    FsQuota::sync([dev])
+    qObj.rpc_opt([option keywords])
 
-    arg = FsQuota::getqcarg([path])
-
-    for dev, path, type, opts in FsQuota::getmntent(): ...
+    for dev, path, type, opts in FsQuota.getmntent(): ...
 
 =head1 DESCRIPTION
 
-The B<FsQuota> module provides access to file system quotas.
-The quotactl system call or ioctl is used to query or set quotas
-on the local host, or queries are submitted via RPC to a remote host.
-Mount tables can be iterated with B<getmntent> and paths can be
-translated to device files (or whatever the actual B<quotactl>
-implementations needs as argument) of the respective file system.
+The B<FsQuota> module provides two classes that allow accessing file
+system quotas from Python scripts:
+
+Instances of the B<quota> class take as main init parameter a path of a
+mount point (or any path below the mount point). The instance can then be
+used to query or modify quota of users or groups within that file system.
+The class is designed portably, so that the same interfaces work across
+all file system types and UNIX platforms. (Although there are some extra
+options during initialization for certain file systems.)
+
+Instances of the I<getmntent> class allow iterating across the mount
+table.  For each entry in the table, it provides the file system type,
+mount  point and options. (Note this class is usually not required to work
+with the quota class.  It is provided here just for convenience, as the
+functionality is actually used internally by the quota class.)
 
 =head2 Functions
 
 =over 4
 
-=item I<(bc,bs,bh,bt, ic,is,ih,it) = FsQuota::query(dev, uid, kind)>
+=item I<qObj = FsQuota.quota(path [,rpc_host=hostname])>
+
+This creates a quota object that then is used for querying or modifying
+quotas. In case of special file systems which are known not to suport
+quota, the creation may raise exception B<FsQuota.error>. However note
+the absence of an exception is not a guarantee that the file system
+actually supports quota.
+
+When parameter B<rpc_host> is specified, the automatic detection of file
+system types is omitted. In this case the following operations will
+address the file system containing the given path on the given remote host
+using RPC. This could be used to query even file systems that are not
+mounted locally. See also the B<rpc_opt()> method for RPC configuration
+options.
+
+Internal behavior: Most importantly, the initialization determines the
+file system type and thus the quota method to be used in following
+quota operations. Many platforms use the B<quotactl> syscall, but even
+then the type of device parameter to be passed varies from system to
+system. It may be the path of a device file (e.g. B</dev/sda1>) or the
+path of the mount point or the quotas file at the top of the file system
+(e.g. B</home/quotas>). For the rare cases you need this information,
+it can be queried via the B<dev> attribute.
+
+The given mount point may also be on a remove file system (e.g. mounted
+via Network File System, NFS), which has the module transparently query
+the given host via a remote procedure call (RPC).  Note: RPC queries
+require I<rquotad(1m)> to be running on the target system. If the daemon
+or host are down, the operations time out after a configurable delay.
+
+=item I<(bc,bs,bh,bt, ic,is,ih,it) = qObj.query(uid, kind)>
 
 Get current usage and quota limits for a given file system and user.
-The user is specified by its numeric uid; defaults to the process'
-real uid.
-
-The type of I<dev> varies from system to system. It's the argument
-which is used by the B<quotactl> implementation to address a specific
-file system. It may be the path of a device file (e.g. B</dev/sd0a>)
-or the path of the mount point or the quotas file at the top of
-the file system (e.g. B</home.stand/quotas>). However you do not
-have to worry about that; use B<FsQuota::getqcarg> to automatically
-translate any path inside a file system to the required I<dev> argument.
-
-I<dev> may also be in the form of B<hostname:path>, which has the
-module transparently query the given host via a remote procedure call
-(RPC). In case you have B<NFS> (or similar network mounts), this type
-of argument may also be produced by B<FsQuota::getqcarg>. Note: RPC
-queries require I<rquotad(1m)> to be running on the target system. If
-the daemon or host are down, the timeout is 12 seconds.
+The user is specified by its numeric UID; defaults to the processes
+real UID.
 
 In I<bc> and I<ic> the current usage in blocks and inodes is returned.
 I<bs> and I<is> are the soft limits, I<bh> and I<ih> hard limits. If the
@@ -81,26 +99,25 @@ soft limit is exceeded, writes by this user will fail for blocks or
 inodes after I<bt> or I<it> is reached. These times are expressed
 as usual, i.e. in elapsed seconds since 00:00 1/Jan/1970 GMT.
 
-Note: When the quota limits are not exceeded, the timestamps
-are meaningless and should be ignored. When hard and soft
-limits are zero, there is no limit for that user. On most
-systems FsQuota::query will return undef in that case and
-errno will be set to ESRCH.
+Note: When the quota limits are not exceeded, the timestamps are
+meaningless and should be ignored. When hard and soft limits are zero,
+this means there is no limit for that user. (On some platforms the query
+may fail with error code I<ESRCH> in that case.)
 
 When I<kind> is given and set to 1, the value in I<uid> is taken as
-gid and group quotas are queried. Group quotas may not be supported
+GID and group quotas are queried. Group quotas may not be supported
 across all platforms (e.g. Linux and other BSD based Unix variants,
 OSF/1 and  AIX - check the quotactl(2) man page on your systems).
 
 When I<kind> is set to 2, project quotas are queried; this is
 currently only supported for XFS. When unsupported, this flag is ignored.
 
-=item I<FsQuota::setqlim(dev, uid, bs,bh, is,ih, tlo, kind)>
+=item I<qObj.setqlim(uid, bs, bh, is, ih, tlo, kind)>
 
-Sets quota limits for the given user. Meanings of I<dev>, I<uid>,
-I<bs>, I<bh>, I<is> and I<ih> are the same as in B<FsQuota::query>.
+Sets quota limits for the given user. Meanings of parameters I<uid>,
+I<bs>, I<bh>, I<is> and I<ih> are the same as for the B<query> method.
 
-I<tlo> decides how the time limits are initialized:
+Optional parameter I<tlo> defines how time limits are initialized:
 I<0>: The time limits are set to B<NOT STARTED>, i.e. the time limits
 are not initialized until the first write attempt by this user.
 This is the default.
@@ -108,9 +125,10 @@ I<1>: The time limits are set to B<7.0 days>.
 More alternatives (i.e. setting a specific time) aren't available in
 most implementations.
 
-When I<kind> is given and set to 1, I<uid> is taken as gid and
-group quota limits are set. This is not supported on all platforms
-(see above). When I<kind> is set to 2, project quotas are modified;
+When optional parameter I<kind> is given and set to 1, parameter
+I<uid> is interpreted as GID and the the limit of the corresponding
+group is modified. This is not supported on all platforms.
+When I<kind> is set to 2, project quotas are modified;
 this is currently only supported for XFS. When unsupported, this
 flag is ignored.
 
@@ -119,66 +137,72 @@ no write permission, you must not set all limits to zero, since that
 is equivalent to unlimited access. Instead set only the hard limit
 to 0 and the soft limit for example to 1.
 
-Note that you cannot set quotas via RPC.
+Note that the module does not support setting quotas via RPC (even
+though some implementations of I<rpc.rquotad(8)> allow optionally
+enabling this, but it seems a bad idea for security.)
 
-=item I<FsQuota::sync(dev)>
+=item I<qObj.sync()>
 
-Have the kernel update the quota file on disk or all quota files
-if no argument given (the latter doesn't work on all systems,
-in particular on B<HP-UX 10.10>).
+Have the kernel update the quota file on disk, in particular after
+modifying quota limits.
 
-The main purpose of this function is to check if quota is enabled
-in the kernel and for a particular file system. Read the B<quotaon(1m)>
-man page on how to enable quotas on a file system.
+A secondary purpose of this method is checking if quota support is
+enabled in the kernel (and on some platforms, for a particular file
+system; on others however the call succeeds even if quota is not enabled
+in the given file system.) Read the B<quotaon(1m)> man page on how to
+enable quotas on a file system.
 
-Note: on some systems this function always returns a success indication,
-even on partitions which do not have quotas enabled (e.g. Linux 2.4).
-This is not a bug in this module; it's a limitation in certain kernels.
+=item I<qObj.rpc_opt(...)>
 
-=item I<(bc,bs,bh,bt, ic,is,ih,it) =>
+This method allows configuring networking and authentication parameters
+for queries of network file system quotas via RPC. The options have no
+effect when targeting other file system types. The following keyword-only
+parameters are available:
 
-I<FsQuota::rpcquery(host,path,uid,kind)>
+=over 8
 
-This is equivalent to B<FsQuota::query("host:path",uid,kind)>, i.e.
-query quota for a given user on a given remote host via RPC.
-I<path> is the path of any file or directory inside the
-file system on the remote host.
+=item B<rpc_port>:
+Sets the port used by I<rpc.rquotad(8)>. Set 0 to return to default 0,
+which means the remote host's portmapper is used.
 
-Querying group quotas (kind = 1) is only recently supported on some
-platforms (e.g. on Linux via "extended" quota RPC, i.e. quota RPC
-version 2) so it may fail due to lack of support either on client or
-server side, or both.
+=item B<rpc_use_tcp>:
+If 1, use TCP; if 0 use UDP (default)
 
-=item I<FsQuota::rpcpeer(port,use_tcp,timeout)>
+=item B<rpc_timeout>:
+Timeout value in milliseconds in case the remote host does not respond.
 
-Configure parameters for subsequent RPC queries; all parameters are
-optional.  By default the portmapper on the remote host is used
-(i.e. default port is 0, protocol is UDP)  The default timeout is
-4 seconds.
+=item B<auth_uid>:
+UID value (i.e. user identifier) to provide for authentication.
+If not specified, this defaults to the UID of the current process.
 
-=item I<FsQuota::rpcauth(uid,gid,hostname)>
+=item B<auth_gid>:
+GID value (i.e. group identifier) to provide for authentication.
+If not specified, this defaults to the GID of the current process.
 
-Configure authorization parameters for subsequent RPC queries; 
-all parameters are optional. By default uid and gid are taken from 
-owner of the process and hostname is the host name of current machine.
+=item B<auth_hostname>:
+Hostname to provide for authentication.
+If not specified or empty, this defaults to the name of the local machine.
 
-=item I<arg = FsQuota::getqcarg(path)>
+=back
 
-Get the required I<dev> argument for B<FsQuota::query> and B<FsQuota::setqlim>
-for the file system you want to operate on. I<path> is any path of an
-existing file or directory inside that file system. The path argument is
-optional and defaults to the current working directory.
+Note for resetting to default authentication, set both B<auth_uid> and
+B<auth_gid> to value -1 (even if you previously changed only one, as the
+opposite is filled in automatically if missing).
 
-The type of I<dev> varies between operating systems, i.e. different
-implementations of the quotactl functionality. Hence it's important for
-compatibility to always use this module function and not really pass
-a device file to B<FsQuota::query> (see also above at I<FsQuota::query>).
+=item I<arg = qObj.dev>
 
-=item I<iterator = FsQuota::getmntent()>
+Returns the device argument used internally by B<query()> and
+B<setqlim()> methods for the selected file system.
 
-The function returns an iterator that can be used to list all entries
-in the mount table. Each returned object is a tuple with the following
-entries of type string:
+=item I<arg = qObj.is_nfs>
+
+This attribute indicates 1 is the file system is NFS, else 0.
+
+=item I<iterator = FsQuota.getmntent()>
+
+This class defines objects that can be used as an iterator which lists all
+entries in the mount table. Each object returned by iteration is a tuple
+with the following entries of type string:
 
 =over 8
 
@@ -202,6 +226,11 @@ call I<setmntent(3)> or the equivalent of your platform upon initialization,
 call I<getmntent(3)> during iteration, and call I<endmntent(3)> upon
 deallocation.
 
+Hint: For finding the mount table entry corresponding to a given path
+(e.g. to determine the file system type), you can compare the device ID
+indicated by I<os.stat(path).st_dev> of the mount points returned from
+iteration with that of the path in question.
+
 =back
 
 =head1 ERROR HANDLING
@@ -213,10 +242,6 @@ The latter is smilar to B<strerror(3)>, however with some adaptions for
 quota operations, since the normal messages don't always make sense for
 quota errors (e.g. B<ESRCH>: I<No such process>, here:
 I<No quota for this user>)
-
-=head1 EXAMPLES
-
-Examples for all functions can be found in the test scripts.
 
 =head1 AUTHORS
 
@@ -235,10 +260,10 @@ copyright.
 
 =head1 SEE ALSO
 
-python3(1), edquota(1m),
+python3(1), edquota(8),
 quotactl(2) or quotactl(7I),
-mount(1m), mtab(4) or mnttab(4), quotaon(1m),
+mount(8), mtab(4) or mnttab(4), quotaon(8),
 setmntent(3), getmntent(3) or getmntinfo(3), endmntent(3),
-rpc(3), rquotad(1m).
+rpc(3), rquotad(8) or rpc.rquotad(8).
 
 =cut
