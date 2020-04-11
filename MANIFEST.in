@@ -1,9 +1,8 @@
 include src/*
 include hints/*
-include contrib/*
+include tests/*
 include doc/*
 include CHANGES
 include INSTALL
 include LICENSE
-include test-quota.py
 exclude myconfig.h
