@@ -30,10 +30,10 @@ static PyObject * FsQuotaError;
 #include "include/vxquotactl.h"
 #endif
 
-/*
- * This data structure encapsulates the entire internal state of an ongoing
- * mount table iteration.
- */
+//
+// This data structure encapsulates the entire internal state of an ongoing
+// mount table iteration.
+//
 typedef struct
 {
 #ifndef AIX
@@ -61,6 +61,10 @@ typedef struct
 #define RPC_DEFAULT_TIMEOUT 4000
 
 #ifndef NO_RPC
+// ----------------------------------------------------------------------------
+//
+// This data structure contains configurable options for RPC
+//
 typedef struct
 {
     unsigned        use_tcp;
@@ -83,18 +87,14 @@ struct quota_xs_nfs_rslt
     time_t ftime;
 };
 
-/*
- * fetch quotas from remote host
- */
+//
+// Fetch quotas from remote host
+//
 
 static int
-callaurpc(host, prognum, versnum, procnum, inproc, in, outproc, out, opt, p_errstr)
-    char *host;
-    int prognum, versnum, procnum;
-    xdrproc_t inproc, outproc;
-    char *in, *out;
-    const T_QUOTA_RPC_OPT * opt;
-    char ** p_errstr;
+callaurpc(char *host, int prognum, int versnum, int procnum,
+          xdrproc_t inproc, char *in, xdrproc_t outproc, char *out,
+          const T_QUOTA_RPC_OPT * opt, char ** p_errstr)
 {
     struct sockaddr_in remaddr;
     struct hostent *hp;
@@ -103,10 +103,10 @@ callaurpc(host, prognum, versnum, procnum, inproc, in, outproc, out, opt, p_errs
     CLIENT *client;
     int socket = RPC_ANYSOCK;
 
-    /*
-     *  Get IP address; by default the port is determined via remote
-     *  portmap daemon; different ports and protocols can be configured
-     */
+    //
+    //  Get IP address; by default the port is determined via remote
+    //  portmap daemon; different ports and protocols can be configured
+    //
     hp = gethostbyname(host);
     if (hp == NULL)
     {
@@ -120,9 +120,9 @@ callaurpc(host, prognum, versnum, procnum, inproc, in, outproc, out, opt, p_errs
     remaddr.sin_family = AF_INET;
     remaddr.sin_port = htons(opt->port);
 
-    /*
-     *  Create client RPC handle
-     */
+    //
+    //  Create client RPC handle
+    //
     client = NULL;
     if (!opt->use_tcp)
     {
@@ -139,17 +139,17 @@ callaurpc(host, prognum, versnum, procnum, inproc, in, outproc, out, opt, p_errs
     {
         if (rpc_createerr.cf_stat != RPC_SUCCESS)
             *p_errstr = clnt_sperrno(rpc_createerr.cf_stat);
-        else  /* should never happen (may be due to inconsistent symbol resolution) */
+        else  // should never happen (may be due to inconsistent symbol resolution)
             *p_errstr = "RPC creation failed for unknown reasons";
         return -1;
     }
 
-    /*
-     *  Create an authentication handle
-     */
+    //
+    //  Create an authentication handle
+    //
     if ((opt->auth_uid >= 0) && (opt->auth_gid >= 0))
     {
-        client->cl_auth = authunix_create((char*)opt->auth_hostname,
+        client->cl_auth = authunix_create((char*)opt->auth_hostname, // remove const
                                           opt->auth_uid,
                                           opt->auth_gid, 0, 0);
     }
@@ -158,9 +158,9 @@ callaurpc(host, prognum, versnum, procnum, inproc, in, outproc, out, opt, p_errs
         client->cl_auth = authunix_create_default();
     }
 
-    /*
-     *  Call remote server
-     */
+    //
+    //  Call remote server
+    //
     timeout.tv_sec = opt->timeout / 1000;
     timeout.tv_usec = (opt->timeout % 1000) * 1000;
     clnt_stat = clnt_call(client, procnum,
@@ -195,9 +195,9 @@ getnfsquota( char *hostp, char *fsnamep, int uid, int kind,
 #ifdef USE_EXT_RQUOTA
     ext_getquota_args ext_gq_args;
 
-    /*
-     * First try USE_EXT_RQUOTAPROG (Extended quota RPC)
-     */
+    //
+    // First try USE_EXT_RQUOTAPROG (Extended quota RPC)
+    //
     ext_gq_args.gqa_pathp = fsnamep;
     ext_gq_args.gqa_id = uid;
     ext_gq_args.gqa_type = ((kind != 0) ? GQA_TYPE_GRP : GQA_TYPE_USR);
@@ -208,16 +208,16 @@ getnfsquota( char *hostp, char *fsnamep, int uid, int kind,
                   opt, rpc_err_str) != 0)
 #endif
     {
-        /*
-         * Fall back to RQUOTAPROG if the server (or client via compile switch)
-         * don't support extended quota RPC
-         */
+        //
+        // Fall back to RQUOTAPROG if the server (or client via compile switch)
+        // don't support extended quota RPC
+        //
         gq_args.gqa_pathp = fsnamep;
         gq_args.gqa_uid = uid;
 
         if (callaurpc(hostp, RQUOTAPROG, RQUOTAVERS, RQUOTAPROC_GETQUOTA,
-                      xdr_getquota_args, &gq_args,
-                      xdr_getquota_rslt, &gq_rslt,
+                      (xdrproc_t)xdr_getquota_args, (char*) &gq_args,
+                      (xdrproc_t)xdr_getquota_rslt, (char*) &gq_rslt,
                       opt, rpc_err_str) != 0)
         {
             return -1;
@@ -233,26 +233,26 @@ getnfsquota( char *hostp, char *fsnamep, int uid, int kind,
 
         gettimeofday(&tv, NULL);
 #ifdef LINUX_RQUOTAD_BUG
-        /* Since Linux reports a bogus block size value (4k), we must not
-         * use it. Thankfully Linux at least always uses 1k block sizes
-         * for quota reports, so we just leave away all conversions.
-         * If you have a mixed environment, you have a problem though.
-         * Complain to the Linux authors or apply my patch (see INSTALL)
-         */
+        // Since Linux reports a bogus block size value (4k), we must not
+        // use it. Thankfully Linux at least always uses 1k block sizes
+        // for quota reports, so we just leave away all conversions.
+        // If you have a mixed environment, you have a problem though.
+        // Complain to the Linux authors or apply my patch (see INSTALL)
+        //
         rslt->bhard = gq_rslt.GQR_RQUOTA.rq_bhardlimit;
         rslt->bsoft = gq_rslt.GQR_RQUOTA.rq_bsoftlimit;
         rslt->bcur = gq_rslt.GQR_RQUOTA.rq_curblocks;
 #else /* not buggy */
         if (gq_rslt.GQR_RQUOTA.rq_bsize >= DEV_QBSIZE)
         {
-            /* assign first, multiply later:
-            ** so that mult works with the possibly larger type in rslt */
+            // assign first, multiply later:
+            // so that mult works with the possibly larger type in rslt
             rslt->bhard = gq_rslt.GQR_RQUOTA.rq_bhardlimit;
             rslt->bsoft = gq_rslt.GQR_RQUOTA.rq_bsoftlimit;
             rslt->bcur = gq_rslt.GQR_RQUOTA.rq_curblocks;
 
-            /* we rely on the fact that block sizes are always powers of 2 */
-            /* so the conversion factor will never be a fraction */
+            // we rely on the fact that block sizes are always powers of 2
+            // so the conversion factor will never be a fraction
             qb_fac = gq_rslt.GQR_RQUOTA.rq_bsize / DEV_QBSIZE;
             rslt->bhard *= qb_fac;
             rslt->bsoft *= qb_fac;
@@ -273,8 +273,8 @@ getnfsquota( char *hostp, char *fsnamep, int uid, int kind,
         rslt->fsoft = gq_rslt.GQR_RQUOTA.rq_fsoftlimit;
         rslt->fcur = gq_rslt.GQR_RQUOTA.rq_curfiles;
 
-        /* if time is given relative to actual time, add actual time */
-        /* Note: all systems except Linux return relative times */
+        // if time is given relative to actual time, add actual time
+        // Note: all systems except Linux return relative times
         if (gq_rslt.GQR_RQUOTA.rq_btimeleft == 0)
             rslt->btime = 0;
         else if (gq_rslt.GQR_RQUOTA.rq_btimeleft + 10*365*24*60*60 < tv.tv_sec)
@@ -358,15 +358,53 @@ xdr_ext_getquota_args( XDR *xdrs, ext_getquota_args *objp )
 
 #endif /* !NO_RPC */
 
-// ------------------------------------------------------------------------
-// Helper function for raising an exception
+// ----------------------------------------------------------------------------
+//  Class "quota"
+// ----------------------------------------------------------------------------
 
+//
+// This enumeration is used to identify file systems that require special
+// handling in the query() and setqlim() methods. File systems for which the
+// default handling can be used are marked "regular".
+//
+typedef enum
+{
+    QUOTA_DEV_INVALID,
+    QUOTA_DEV_REGULAR,
+    QUOTA_DEV_NFS,
+    QUOTA_DEV_XFS,
+    QUOTA_DEV_VXFS,
+    QUOTA_DEV_AFS,
+    QUOTA_DEV_JFS2,
+} T_QUOTA_DEV_FS_TYPE;
+
+//
+// Container for instance state variables
+//
+typedef struct
+{
+    PyObject_HEAD
+    char * m_path;                      // path parameter passed to the constructor
+    char * m_qcarg;                     // device parameter derived from path
+    char * m_rpc_host;                  // rpc_host parameter passed to the constructor
+    T_QUOTA_DEV_FS_TYPE m_dev_fs_type;  // file system types that need special handling
+    T_QUOTA_RPC_OPT m_rpc_opt;          // container for parameters set via rpc_opt()
+} Quota_ObjectType;
+
+// forward declaration
+static int Quota_setqcarg(Quota_ObjectType *self);
+
+//
+// Helper function for raising an exception upon quotactl() error
+//
 static void *
-FsQuota_QuotaCtlException(int errnum, const char * str)
+FsQuota_QuotaCtlException(Quota_ObjectType * self, int errnum, const char * str)
 {
     if (str == NULL)
     {
-        if ((errnum == EINVAL) || (errnum == ENOTTY) || (errnum == ENOENT) || (errnum == ENOSYS))
+        if ((errnum == ENOENT) && (self->m_dev_fs_type == QUOTA_DEV_XFS))
+            str = "No quota for this user";
+        else if ((errnum == EINVAL) || (errnum == ENOTTY) || (errnum == ENOENT) || (errnum == ENOSYS))
             str = "No quotas on this system";
         else if (errnum == ENODEV)
             str = "Not a standard file system";
@@ -375,7 +413,7 @@ FsQuota_QuotaCtlException(int errnum, const char * str)
         else if (errnum == EACCES)
             str = "Access denied";
         else if (errnum == ESRCH)
-            str = "No quota for this user";
+            str = "No quota for this user";  // or quotas not enabled for fs (linux)
         else if (errnum == EUSERS)
             str = "Quota table overflow";
         else
@@ -392,6 +430,9 @@ FsQuota_QuotaCtlException(int errnum, const char * str)
     return NULL;
 }
 
+//
+// Helper function for raising an exception upon quotactl() error
+//
 /*static*/ void *
 FsQuota_OsException(int errnum, const char * desc)
 {
@@ -405,33 +446,9 @@ FsQuota_OsException(int errnum, const char * desc)
     return NULL;
 }
 
-/* ----------------------------------------------------------------------------
- *
- *  External interfaces
- *
- */
-
-typedef enum
-{
-    QUOTA_DEV_REGULAR,
-    QUOTA_DEV_NFS,
-    QUOTA_DEV_XFS,
-    QUOTA_DEV_VXFS,
-    QUOTA_DEV_AFS,
-    QUOTA_DEV_JFS2,
-} T_QUOTA_DEV_FS_TYPE;
-
-typedef struct
-{
-    PyObject_HEAD
-    char * m_path;
-    char * m_qcarg;
-    char * m_rpc_host;
-    T_QUOTA_DEV_FS_TYPE m_dev_fs_type;
-    T_QUOTA_RPC_OPT m_rpc_opt;
-} Quota_ObjectType;
-
-
+//
+// Implementation of the quota.query() method
+//
 static PyObject *
 Quota_query(Quota_ObjectType *self, PyObject *args)
 {
@@ -444,6 +461,11 @@ Quota_query(Quota_ObjectType *self, PyObject *args)
     PyObject * RETVAL = NULL;
     int err;
 
+    if (self->m_dev_fs_type == QUOTA_DEV_INVALID)
+    {
+        RETVAL = FsQuota_QuotaCtlException(self, EINVAL, "FsQuota.quota instance is uninitialized");
+    }
+    else
 #ifdef SGI_XFS
     if (self->m_dev_fs_type == QUOTA_DEV_XFS)
     {
@@ -466,7 +488,7 @@ Quota_query(Quota_ObjectType *self, PyObject *args)
                                    xfs_dqblk.d_itimer);
         }
         else
-            FsQuota_QuotaCtlException(errno, NULL);
+            FsQuota_QuotaCtlException(self, errno, NULL);
     }
     else
 #endif
@@ -488,14 +510,14 @@ Quota_query(Quota_ObjectType *self, PyObject *args)
                                    vxfs_dqb.dqb_ftimelimit);
         }
         else
-            FsQuota_QuotaCtlException(errno, NULL);
+            FsQuota_QuotaCtlException(self, errno, NULL);
     }
     else
 #endif
 #ifdef AFSQUOTA
     if (self->m_dev_fs_type == QUOTA_DEV_AFS)
     {
-        if (!afs_check())  /* check is *required* as setup! */
+        if (!afs_check())  // check is *required* as setup!
         {
             FsQuota_OsException(EINVAL, "AFS setup failed");
         }
@@ -517,7 +539,7 @@ Quota_query(Quota_ObjectType *self, PyObject *args)
                                        0);
             }
             else
-                FsQuota_QuotaCtlException(errno, NULL);
+                FsQuota_QuotaCtlException(self, errno, NULL);
         }
     }
     else
@@ -542,11 +564,11 @@ Quota_query(Quota_ObjectType *self, PyObject *args)
                                        rslt.ftime);
             }
             else if (rpc_err_str != NULL)
-                FsQuota_QuotaCtlException(ECOMM, rpc_err_str);
+                FsQuota_QuotaCtlException(self, ECOMM, rpc_err_str);
             else
-                FsQuota_QuotaCtlException(errno, NULL);
+                FsQuota_QuotaCtlException(self, errno, NULL);
 #else /* NO_RPC */
-            FsQuota_QuotaCtlException(ENOSYS, "RPC not supported for this platform");
+            FsQuota_QuotaCtlException(self, ENOSYS, "RPC not supported for this platform");
             err = -1;
 #endif /* NO_RPC */
         }
@@ -604,7 +626,7 @@ Quota_query(Quota_ObjectType *self, PyObject *args)
 #else /* not Q_CTL_V3 */
 #ifdef Q_CTL_V2
 #ifdef AIX
-            /* AIX quotactl doesn't fail if path does not exist!? */
+            // AIX quotactl doesn't fail if path does not exist!?
             struct stat st;
 #if defined(HAVE_JFS2)
             if (self->m_dev_fs_type == QUOTA_DEV_JFS2)
@@ -657,13 +679,16 @@ Quota_query(Quota_ObjectType *self, PyObject *args)
                                        dqblk.QS_FTIME);
             }
             else if (err)
-                FsQuota_QuotaCtlException(errno, NULL);
+                FsQuota_QuotaCtlException(self, errno, NULL);
 #endif /* not NETBSD_LIBQUOTA */
         }
     }
     return RETVAL;
 }
 
+//
+// Implementation of the quota.seqlim() method
+//
 static PyObject *
 Quota_setqlim(Quota_ObjectType *self, PyObject *args)
 {
@@ -693,6 +718,12 @@ Quota_setqlim(Quota_ObjectType *self, PyObject *args)
 #endif
     if (timelimflag != 0)
         timelimflag = 1;
+
+    if (self->m_dev_fs_type == QUOTA_DEV_INVALID)
+    {
+        RETVAL = FsQuota_QuotaCtlException(self, EINVAL, "FsQuota.quota instance is uninitialized");
+    }
+    else
 #ifdef SGI_XFS
     if (self->m_dev_fs_type == QUOTA_DEV_XFS)
     {
@@ -712,10 +743,10 @@ Quota_setqlim(Quota_ObjectType *self, PyObject *args)
         int err = quotactl(QCMD(Q_XSETQLIM, ((kind == 2) ? XQM_PRJQUOTA : ((kind == 1) ? XQM_GRPQUOTA : XQM_USRQUOTA))), self->m_qcarg, uid, CADR &xfs_dqblk);
 #endif
         if (err)
-            RETVAL = FsQuota_QuotaCtlException(errno, NULL);
+            RETVAL = FsQuota_QuotaCtlException(self, errno, NULL);
     }
     else
-    /* if not xfs, than it's a classic IRIX efs file system */
+    // if not xfs, than it's a classic IRIX efs file system
 #endif
 #ifdef SOLARIS_VXFS
     if (self->m_dev_fs_type == QUOTA_DEV_VXFS)
@@ -730,22 +761,22 @@ Quota_setqlim(Quota_ObjectType *self, PyObject *args)
         vxfs_dqb.dqb_ftimelimit = timelimflag;
         int err = vx_quotactl(VX_SETQUOTA, self->m_qcarg, uid, CADR &vxfs_dqb);
         if (err)
-            RETVAL = FsQuota_QuotaCtlException(errno, NULL);
+            RETVAL = FsQuota_QuotaCtlException(self, errno, NULL);
     }
     else
 #endif
 #ifdef AFSQUOTA
     if (self->m_dev_fs_type == QUOTA_DEV_AFS)
     {
-        if (!afs_check())  /* check is *required* as setup! */
+        if (!afs_check())  // check is *required* as setup!
         {
-            RETVAL = FsQuota_QuotaCtlException(EINVAL, "AFS setup via afc_check failed");
+            RETVAL = FsQuota_QuotaCtlException(self, EINVAL, "AFS setup via afc_check failed");
         }
         else
         {
             int err = afs_setqlim(self->m_qcarg, bh);
             if (err)
-                RETVAL = FsQuota_QuotaCtlException(errno, NULL);
+                RETVAL = FsQuota_QuotaCtlException(self, errno, NULL);
         }
     }
     else
@@ -769,7 +800,7 @@ Quota_setqlim(Quota_ObjectType *self, PyObject *args)
                            uid, CADR &user_quota);
         }
         if (err)
-            RETVAL = FsQuota_QuotaCtlException(errno, NULL);
+            RETVAL = FsQuota_QuotaCtlException(self, errno, NULL);
     }
     else
 #endif /* HAVE_JFS2 */
@@ -787,18 +818,18 @@ Quota_setqlim(Quota_ObjectType *self, PyObject *args)
 
             qk.qk_objtype = QUOTA_OBJTYPE_BLOCKS;
 
-            /* set the grace period for blocks */
-            if (timelimflag)  /* seven days */
+            // set the grace period for blocks
+            if (timelimflag)  // seven days
             {
                 qv.qv_grace = 7*24*60*60;
             }
-            else if (quota_get(qh, &qk, &qv) >= 0)  /* use user's current setting */
+            else if (quota_get(qh, &qk, &qv) >= 0)  // use user's current setting
             {
-                /* OK */
+                // OK
             }
-            else if (qk.qk_id = QUOTA_DEFAULTID, quota_get(qh, &qk, &qv) >= 0)  /* use default setting */
+            else if (qk.qk_id = QUOTA_DEFAULTID, quota_get(qh, &qk, &qv) >= 0)  // use default setting
             {
-                /* OK, reset qk_id */
+                // OK, reset qk_id
                 qk.qk_id = uid;
             }
             else
@@ -814,18 +845,18 @@ Quota_setqlim(Quota_ObjectType *self, PyObject *args)
             {
                 qk.qk_objtype = QUOTA_OBJTYPE_FILES;
 
-                /* set the grace period for files, see comments above */
+                // set the grace period for files, see comments above
                 if (timelimflag)
                 {
                     qv.qv_grace = 7*24*60*60;
                 }
                 else if (quota_get(qh, &qk, &qv) >= 0)
                 {
-                    /* OK */
+                    // OK
                 }
                 else if (qk.qk_id = QUOTA_DEFAULTID, quota_get(qh, &qk, &qv) >= 0)
                 {
-                    /* OK, reset qk_id */
+                    // OK, reset qk_id
                     qk.qk_id = uid;
                 }
                 else
@@ -839,14 +870,14 @@ Quota_setqlim(Quota_ObjectType *self, PyObject *args)
                 qv.qv_expiretime = 0;
 
                 if (quota_put(qh, &qk, &qv) < 0)
-                    RETVAL = FsQuota_QuotaCtlException(errno, NULL);
+                    RETVAL = FsQuota_QuotaCtlException(self, errno, NULL);
             }
             else
-                RETVAL = FsQuota_QuotaCtlException(errno, NULL);
+                RETVAL = FsQuota_QuotaCtlException(self, errno, NULL);
             quota_close(qh);
         }
         else
-            RETVAL = FsQuota_QuotaCtlException(errno, NULL);
+            RETVAL = FsQuota_QuotaCtlException(self, errno, NULL);
 #else /* not NETBSD_LIBQUOTA */
         memset(&dqblk, 0, sizeof(dqblk));
         dqblk.QS_BSOFT = Q_MUL(bs);
@@ -859,7 +890,7 @@ Quota_setqlim(Quota_ObjectType *self, PyObject *args)
         if ((fd = open(self->m_qcarg, O_RDONLY)) != -1)
         {
             if = (ioctl(fd, Q_QUOTACTL, &qp) != 0)
-                RETVAL = FsQuota_QuotaCtlException(errno, NULL);
+                RETVAL = FsQuota_QuotaCtlException(self, errno, NULL);
             close(fd);
         }
         else
@@ -875,7 +906,7 @@ Quota_setqlim(Quota_ObjectType *self, PyObject *args)
 #endif /* Q_CTL_V2 */
 #endif /* Q_CTL_V3 */
         if (err)
-            RETVAL = FsQuota_QuotaCtlException(errno, NULL);
+            RETVAL = FsQuota_QuotaCtlException(self, errno, NULL);
 #endif /* USE_IOCTL */
 #endif /* not NETBSD_LIBQUOTA */
     }
@@ -883,6 +914,9 @@ Quota_setqlim(Quota_ObjectType *self, PyObject *args)
     return RETVAL;
 }
 
+//
+// Implementation of the quota.sync() method
+//
 static PyObject *
 Quota_sync(Quota_ObjectType *self, PyObject *args)
 {
@@ -891,11 +925,16 @@ Quota_sync(Quota_ObjectType *self, PyObject *args)
 
     PyObject * RETVAL = Py_None;
 
+    if (self->m_dev_fs_type == QUOTA_DEV_INVALID)
+    {
+        RETVAL = FsQuota_QuotaCtlException(self, EINVAL, "FsQuota.quota instance is uninitialized");
+    }
+    else
 #ifdef SOLARIS_VXFS
     if (self->m_dev_fs_type == QUOTA_DEV_VXFS)
     {
         if (vx_quotactl(VX_QSYNCALL, self->m_qcarg, 0, NULL) != 0)
-            RETVAL = FsQuota_QuotaCtlException(errno, NULL);
+            RETVAL = FsQuota_QuotaCtlException(self, errno, NULL);
     }
     else
 #endif
@@ -904,20 +943,20 @@ Quota_sync(Quota_ObjectType *self, PyObject *args)
     {
         if (!afs_check())
         {
-            RETVAL = FsQuota_QuotaCtlException(EINVAL, "AFS setup via afc_check failed");
+            RETVAL = FsQuota_QuotaCtlException(self, EINVAL, "AFS setup via afc_check failed");
         }
         else
         {
             int foo1, foo2;
             if (afs_getquota(self->m_qcarg, &foo1, &foo2) != 0)
-                RETVAL = FsQuota_QuotaCtlException(EINVAL, NULL);
+                RETVAL = FsQuota_QuotaCtlException(self, EINVAL, NULL);
         }
     }
     else
 #endif
 #ifdef NETBSD_LIBQUOTA
-    /* NOP / not supported */
-#else /* not NETBSD_LIBQUOTA */
+    // NOP / not supported
+#else /* !NETBSD_LIBQUOTA */
 #ifdef USE_IOCTL
     {
         struct quotactl qp;
@@ -930,9 +969,9 @@ Quota_sync(Quota_ObjectType *self, PyObject *args)
             if (ioctl(fd, Q_QUOTACTL, &qp) != 0)
             {
                 if (errno == ESRCH)
-                    RETVAL = FsQuota_QuotaCtlException(EINVAL, NULL);
+                    RETVAL = FsQuota_QuotaCtlException(self, EINVAL, NULL);
                 else
-                    RETVAL = FsQuota_QuotaCtlException(errno, NULL);
+                    RETVAL = FsQuota_QuotaCtlException(self, errno, NULL);
             }
             close(fd);
         }
@@ -945,34 +984,13 @@ Quota_sync(Quota_ObjectType *self, PyObject *args)
 #ifdef SGI_XFS
         if (self->m_dev_fs_type == QUOTA_DEV_XFS)
         {
-            struct fs_quota_stat fsq_stat;
-
-            if (!quotactl(QCMD(Q_XGETQSTAT, USRQUOTA), self->m_qcarg, 0, CADR &fsq_stat))
-            {
-                if (fsq_stat.qs_flags & (XFS_QUOTA_UDQ_ACCT | XFS_QUOTA_GDQ_ACCT))
-                {
-                    // Ok
-                }
-                else if (   (strcmp(self->m_qcarg, "/") == 0)
-                         && (  ((fsq_stat.qs_flags & 0xff00) >> 8)
-                             & (XFS_QUOTA_UDQ_ACCT | XFS_QUOTA_GDQ_ACCT)) )
-                {
-                    // Ok
-                }
-                else
-                {
-                    RETVAL = FsQuota_QuotaCtlException(ENOENT, NULL);
-                }
-            }
-            else
-            {
-                RETVAL = FsQuota_QuotaCtlException(ENOENT, NULL);
-            }
+            if (quotactl(QCMD(Q_XQUOTASYNC, XQM_USRQUOTA), self->m_qcarg, 0, NULL) != 0)
+                RETVAL = FsQuota_QuotaCtlException(self, errno, NULL);
         }
         else
 #endif /* SGI_XFS */
         if (linuxquota_sync(self->m_qcarg, FALSE) != 0)
-            RETVAL = FsQuota_QuotaCtlException(errno, NULL);
+            RETVAL = FsQuota_QuotaCtlException(self, errno, NULL);
 #else /* !Q_CTL_V3 */
 #ifdef Q_CTL_V2
 #ifdef AIX
@@ -986,11 +1004,11 @@ Quota_sync(Quota_ObjectType *self, PyObject *args)
         else
 #endif /* AIX */
         if (quotactl(self->m_qcarg, QCMD(Q_SYNC, USRQUOTA), 0, NULL) != 0)
-            RETVAL = FsQuota_QuotaCtlException(errno, NULL);
+            RETVAL = FsQuota_QuotaCtlException(self, errno, NULL);
 #else /* !Q_CTL_V2 */
 #ifdef SGI_XFS
 #define XFS_UQUOTA (XFS_QUOTA_UDQ_ACCT|XFS_QUOTA_UDQ_ENFD)
-        /* Q_SYNC is not supported on XFS filesystems, so emulate it */
+        // Q_SYNC is not supported on XFS filesystems, so emulate it
         if (self->m_dev_fs_type == QUOTA_DEV_XFS)
         {
             fs_quota_stat_t fsq_stat;
@@ -1000,15 +1018,15 @@ Quota_sync(Quota_ObjectType *self, PyObject *args)
             if (quotactl(Q_GETQSTAT, self->m_qcarg, 0, CADR &fsq_stat) != 0)
             {
                 if ((fsq_stat.qs_flags & XFS_UQUOTA) != XFS_UQUOTA)
-                    RETVAL = FsQuota_QuotaCtlException(ENOENT, NULL);
+                    RETVAL = FsQuota_QuotaCtlException(self, ENOENT, NULL);
                 else
-                    RETVAL = FsQuota_QuotaCtlException(errno, NULL);
+                    RETVAL = FsQuota_QuotaCtlException(self, errno, NULL);
             }
         }
         else
 #endif /* SGI_XFS */
         if (quotactl(Q_SYNC, self->m_qcarg, 0, NULL) != 0)
-            RETVAL = FsQuota_QuotaCtlException(errno, NULL);
+            RETVAL = FsQuota_QuotaCtlException(self, errno, NULL);
 #endif /* !Q_CTL_V2 */
 #endif /* !Q_CTL_V3 */
     }
@@ -1018,13 +1036,16 @@ Quota_sync(Quota_ObjectType *self, PyObject *args)
     return RETVAL;
 }
 
+//
+// Implementation of the quota.rpc_opt() method
+//
 static PyObject *
 Quota_rpc_opt(Quota_ObjectType *self, PyObject *args, PyObject *kwds)
 {
 #ifndef NO_RPC
-    char * p_hostname = NULL;
     char * kwlist[] = {"rpc_port", "rpc_use_tcp", "rpc_timeout",
                        "auth_uid", "auth_gid", "auth_hostname", NULL};
+    char * p_hostname = NULL;
     PyObject * RETVAL = Py_None;
 
     if (!PyArg_ParseTupleAndKeywords(args, kwds, "|$IpIiis", kwlist,
@@ -1060,11 +1081,9 @@ Quota_rpc_opt(Quota_ObjectType *self, PyObject *args, PyObject *kwds)
     return RETVAL;
 }
 
-// ----------------------------------------------------------------------------
-
-// forward declaration
-static int Quota_setqcarg(Quota_ObjectType *self);
-
+//
+// Allocate a new "quota" object and initialize the C state struct
+//
 static PyObject *
 Quota_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
 {
@@ -1080,36 +1099,67 @@ Quota_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
     return (PyObject *) self;
 }
 
+//
+// De-allocate a "quota" object and internal resources
+//
 static void
 Quota_dealloc(Quota_ObjectType *self)
 {
-    //TODO if (self->m_path != NULL)
-    //TODO     free(self->m_path);
+    if (self->m_path != NULL)
+        free(self->m_path);
     if (self->m_qcarg != NULL)
         free(self->m_qcarg);
-    //TODO if (self->m_rpc_host != NULL)
-    //TODO     free(self->m_rpc_host);
+    if (self->m_rpc_host != NULL)
+        free(self->m_rpc_host);
 
     Py_TYPE(self)->tp_free((PyObject *) self);
 }
 
+//
+// Implementation of the standard "__init__" function: Usually called after
+// "new"; may be called again to re-initialize the object.
+//
 static int
 Quota_init(Quota_ObjectType *self, PyObject *args, PyObject *kwds)
 {
     char * kwlist[] = {"path", "rpc_host", NULL};
+    char * p_path = NULL;
+    char * p_rpc_host = NULL;
 
-    if (!PyArg_ParseTupleAndKeywords(args, kwds, "s|s", kwlist,
-                                     &self->m_path, &self->m_rpc_host))
-        return -1;
-
+    // reset state in case the module is already initialized
+    if (self->m_path != NULL)
+    {
+        free(self->m_path);
+        self->m_path = NULL;
+    }
+    if (self->m_qcarg != NULL)
+    {
+        free(self->m_qcarg);
+        self->m_qcarg = NULL;
+    }
     if (self->m_rpc_host != NULL)
     {
-        self->m_qcarg = strdup(self->m_path);
-        self->m_path = "rpcpeer";  // local path is unknown
+        free(self->m_rpc_host);
+        self->m_rpc_host = NULL;
+    }
+    self->m_dev_fs_type = QUOTA_DEV_INVALID;
+
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "s|s", kwlist,
+                                     &p_path, &p_rpc_host))
+        return -1;
+
+    if (p_rpc_host != NULL)
+    {
+        self->m_rpc_host = strdup(p_rpc_host);
+        self->m_qcarg = strdup(p_path);
+        self->m_path = strdup("n/a");
         self->m_dev_fs_type = QUOTA_DEV_NFS;
     }
     else
     {
+        // dup is needed as the string buffer lives only as long as object passed as parameter
+        self->m_path = strdup(p_path);
+
         if (Quota_setqcarg(self) != 0)
             return -1;
     }
@@ -1117,21 +1167,46 @@ Quota_init(Quota_ObjectType *self, PyObject *args, PyObject *kwds)
     return 0;
 }
 
+//
+// Implementation of the standard "repr" function: Returns a "string
+// representation" of the object. Should include all parameters.
+//
 static PyObject *
 Quota_Repr(Quota_ObjectType *self)
 {
-    const char * typn;
-    switch (self->m_dev_fs_type)
+    if (self->m_dev_fs_type == QUOTA_DEV_INVALID)
     {
-        case QUOTA_DEV_NFS:  typn = "NFS"; break;
-        case QUOTA_DEV_XFS:  typn = "XFS"; break;
-        case QUOTA_DEV_VXFS: typn = "VXFS"; break;
-        case QUOTA_DEV_AFS:  typn = "AFS"; break;
-        case QUOTA_DEV_JFS2: typn = "JFS2"; break;
-        default:             typn = "no"; break;
+        return PyUnicode_FromString("<FsQuota.quota()>");
     }
-    return PyUnicode_FromFormat("<FsQuota.quota(%s), qcarg=%s, special:%s>",
-                                self->m_path, self->m_qcarg, typn);
+    else if (self->m_dev_fs_type == QUOTA_DEV_NFS)
+    {
+        return PyUnicode_FromFormat("<FsQuota.quota(%s), qcarg=%s:%s, special:NFS, "
+                                    "use_tcp:%d, port:%d, timeout:%d, "
+                                    "auth_uid:%d, auth_gid:%d, auth_hostname:%s>",
+                                    self->m_path, self->m_rpc_host, self->m_qcarg,
+                                    self->m_rpc_opt.port,
+                                    self->m_rpc_opt.use_tcp,
+                                    self->m_rpc_opt.timeout,
+                                    self->m_rpc_opt.auth_uid,
+                                    self->m_rpc_opt.auth_gid,
+                                    self->m_rpc_opt.auth_hostname
+                                    );
+    }
+    else
+    {
+        const char * typn;
+        switch (self->m_dev_fs_type)
+        {
+            case QUOTA_DEV_NFS:  typn = "NFS"; break;  // never reached, handled above
+            case QUOTA_DEV_XFS:  typn = "XFS"; break;
+            case QUOTA_DEV_VXFS: typn = "VXFS"; break;
+            case QUOTA_DEV_AFS:  typn = "AFS"; break;
+            case QUOTA_DEV_JFS2: typn = "JFS2"; break;
+            default:             typn = "no"; break;
+        }
+        return PyUnicode_FromFormat("<FsQuota.quota(%s), qcarg=%s, special:%s>",
+                                    self->m_path, self->m_qcarg, typn);
+    }
 }
 
 static PyObject *
@@ -1147,7 +1222,7 @@ Quota_GetAttr(Quota_ObjectType *self, PyObject * attr)
                 PyErr_Clear();
                 if (self->m_rpc_host != NULL)
                     RETVAL = PyUnicode_FromFormat("%s:%s", self->m_rpc_host, self->m_qcarg);
-                else
+                else if (self->m_qcarg != NULL)
                     RETVAL = PyUnicode_FromString(self->m_qcarg);
             }
             else if (strcmp("is_nfs", PyUnicode_AsUTF8(attr)) == 0)
@@ -1191,7 +1266,12 @@ static PyTypeObject QuotaTypeDef =
 };
 
 // ----------------------------------------------------------------------------
+// Sub-functions for iterating across the mount table
 
+//
+// Portable setmntent(): This function must be called once at the start of
+// iteration.
+//
 int my_setmntent(T_STATE_MNTENT * state)
 {
     int RETVAL = 0;
@@ -1259,6 +1339,12 @@ int my_setmntent(T_STATE_MNTENT * state)
     return RETVAL;
 }
 
+//
+// Portable getmntent(): This function fills the given buffers with string
+// pointers describing the next mount table entry. Note the strings are
+// located in static memory owned by the function and must not be freed by
+// the caller; they are invalidated upon the next call.
+//
 int my_getmntent(T_STATE_MNTENT * state, char **str_buf)
 {
     int RETVAL = -1;
@@ -1406,6 +1492,11 @@ int my_getmntent(T_STATE_MNTENT * state, char **str_buf)
     return RETVAL;
 }
 
+//
+// Portable endmntent(): This function end the iteration and frees resources
+// (if needed). This function should be called once for each call to
+// setmntent(). getmntent must not be called afterward.
+//
 void my_endmntent(T_STATE_MNTENT * state)
 {
     if (state->mtab != NULL)
@@ -1427,14 +1518,23 @@ void my_endmntent(T_STATE_MNTENT * state)
 }
 
 // ----------------------------------------------------------------------------
+//   Class "getmntent"
+// ----------------------------------------------------------------------------
 
+//
+// Container for instance state variables
+//
 typedef struct
 {
     PyObject_HEAD
-    T_STATE_MNTENT mntent;
-    int iterIndex;
+    T_STATE_MNTENT mntent;      // transparent state used by my_getmntent()
+    int iterIndex;              // index incremented for each call of getmntent()
 } MntTab_ObjectType;
 
+//
+// Allocate a new object and initialize the iteration state.
+// Raise an exception if setmntent reports an error.
+//
 static PyObject *
 MntTab_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
 {
@@ -1450,6 +1550,9 @@ MntTab_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
     return (PyObject *) self;
 }
 
+//
+// De-allocate an object and internal resources
+//
 static void
 MntTab_dealloc(MntTab_ObjectType *self)
 {
@@ -1458,6 +1561,12 @@ MntTab_dealloc(MntTab_ObjectType *self)
     Py_TYPE(self)->tp_free((PyObject *) self);
 }
 
+//
+// Implementation of the standard "__init__" function: Usually called after
+// "new": in this case the function does nothing as initialization is already
+// done within "new"; may be called again to re-initialize the object: if
+// getmntent() was called at least once, iteration is re-initialized.
+//
 static int
 MntTab_init(MntTab_ObjectType *self, PyObject *args, PyObject *kwds)
 {
@@ -1480,6 +1589,11 @@ MntTab_init(MntTab_ObjectType *self, PyObject *args, PyObject *kwds)
     return 0;
 }
 
+//
+// Implementation of the standard "repr" function: Returns a "string
+// representation" of the object. Should include all parameters; in this
+// case we can only show the iteration index.
+//
 static PyObject *
 MntTab_Repr(MntTab_ObjectType *self)
 {
@@ -1489,6 +1603,10 @@ MntTab_Repr(MntTab_ObjectType *self)
         return PyUnicode_FromFormat("<FsQuota.MntTab iterator at EOL>");
 }
 
+//
+// Implementation of the standard "__iter__" function: Simply returns a
+// reference to itself, as the object is already set up for iteration.
+//
 static PyObject *
 MntTab_Iter(MntTab_ObjectType *self)
 {
@@ -1496,6 +1614,11 @@ MntTab_Iter(MntTab_ObjectType *self)
     return (PyObject *) self;
 }
 
+//
+// Implementation of the standard "__next__" function: Call getmntent() and
+// return the resulting strings in form of a tuple, or raise an exception upon
+// end of iteration.
+//
 static PyObject *
 MntTab_IterNext(MntTab_ObjectType *self)
 {
@@ -1567,9 +1690,8 @@ static PyStructSequence_Desc MntEntType_Desc =
 #endif
 
 // ----------------------------------------------------------------------------
-
 //
-//  Get "device" argument for this module's Quota-functions
+//  Determine "device" argument for the "quota" class methods
 //
 
 static int Quota_setqcarg(Quota_ObjectType *self)
@@ -1638,6 +1760,8 @@ static int Quota_setqcarg(Quota_ObjectType *self)
             }
             else
             {
+                self->m_dev_fs_type = QUOTA_DEV_REGULAR;
+
                 // XFS, VxFS and AFS quotas require separate access methods
 #if defined (SGI_XFS)
                 // (optional for VxFS: later versions use 'normal' quota interface)
@@ -1698,12 +1822,15 @@ static int Quota_setqcarg(Quota_ObjectType *self)
     if (self->m_qcarg == NULL)
     {
         FsQuota_OsException(EINVAL, "Mount path not found or device unsupported");
+        self->m_dev_fs_type = QUOTA_DEV_INVALID;
         return -1;
     }
     return 0;
 }
 
 // ----------------------------------------------------------------------------
+// Top-level definition of the module
+// - the module only contains the two classes, but no methods directly
 
 static struct PyModuleDef FsQuota_module =
 {
@@ -1726,7 +1853,8 @@ PyInit_FsQuota(void)
     if (module == NULL)
         return NULL;
 
-    FsQuotaError = PyErr_NewException("FsQuota.error", NULL, NULL);
+    // create exception class "FsQuota.error", derived from OSError
+    FsQuotaError = PyErr_NewException("FsQuota.error", PyExc_OSError, NULL);
     Py_XINCREF(FsQuotaError);
     if (PyModule_AddObject(module, "error", FsQuotaError) < 0)
     {
@@ -1736,6 +1864,7 @@ PyInit_FsQuota(void)
         return NULL;
     }
 
+    // create class "FsQuota.quota"
     Py_INCREF(&QuotaTypeDef);
     if (PyModule_AddObject(module, "quota", (PyObject *) &QuotaTypeDef) < 0)
     {
@@ -1746,6 +1875,7 @@ PyInit_FsQuota(void)
         return NULL;
     }
 
+    // create class "FsQuota.getmntent"
     Py_INCREF(&MntTabTypeDef);
     if (PyModule_AddObject(module, "getmntent", (PyObject *) &MntTabTypeDef) < 0)
     {

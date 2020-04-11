@@ -161,25 +161,31 @@ parameters are available:
 
 =over 8
 
-=item B<rpc_port>:
+=item B<rpc_port>
+
 Sets the port used by I<rpc.rquotad(8)>. Set 0 to return to default 0,
 which means the remote host's portmapper is used.
 
-=item B<rpc_use_tcp>:
+=item B<rpc_use_tcp>
+
 If 1, use TCP; if 0 use UDP (default)
 
-=item B<rpc_timeout>:
+=item B<rpc_timeout>
+
 Timeout value in milliseconds in case the remote host does not respond.
 
-=item B<auth_uid>:
+=item B<auth_uid>
+
 UID value (i.e. user identifier) to provide for authentication.
 If not specified, this defaults to the UID of the current process.
 
-=item B<auth_gid>:
+=item B<auth_gid>
+
 GID value (i.e. group identifier) to provide for authentication.
 If not specified, this defaults to the GID of the current process.
 
-=item B<auth_hostname>:
+=item B<auth_hostname>
+
 Hostname to provide for authentication.
 If not specified or empty, this defaults to the name of the local machine.
 
@@ -206,13 +212,21 @@ with the following entries of type string:
 
 =over 8
 
-=item [0] mnt_fsname: name of mounted filesystem (e.g. device name)
+=item [0] B<mnt_fsname>
 
-=item [1] mnt_dir:    filesystem path prefix (aka mount point)
+Name of the filesystem (e.g. device name)
 
-=item [2] mnt_type:   mount type (aka file system type)
+=item [1] B<mnt_dir>
 
-=item [3] mnt_opts:   mount options, separated by colon
+Filesystem path prefix (aka mount point)
+
+=item [2] B<mnt_type>
+
+Mount type (aka file system type)
+
+=item [3] B<mnt_opts>
+
+Mount options, separated by colon.
 
 =back
 
@@ -235,13 +249,15 @@ iteration with that of the path in question.
 
 =head1 ERROR HANDLING
 
-All the functions raise exception I<FsQuota.error> upon errors. The
-exception class is a tuple that contains firstly the numerical error code
-(copied from I<errno> in most cases) and secondly a derived error message.
-The latter is smilar to B<strerror(3)>, however with some adaptions for
-quota operations, since the normal messages don't always make sense for
-quota errors (e.g. B<ESRCH>: I<No such process>, here:
-I<No quota for this user>)
+All methods raise exception I<FsQuota.error> upon errors. The exception
+class is derived from B<OSError> and thus contains firstly a numerical
+error code in attribute I<errno> (copied from I<errno> in most cases), and
+secondly a derived error message in attribute I<strerror>.
+
+Note the error string is adapted to the context of quota operations and
+therefore not always identical to the text returned by B<strerror(3)>.
+The normal error descriptions don't always make sense for quota errors
+(e.g. B<ESRCH>: I<No such process>, here: I<No quota for this user>)
 
 =head1 AUTHORS
 

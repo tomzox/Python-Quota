@@ -106,12 +106,14 @@ if (   (match1 and (int(match1.group(1)) >= 59))
 # check whether RPCSVC is included within libc
 # - SUN RPC/XDR support was split off from glibc, see:
 #   https://lists.fedoraproject.org/archives/list/devel@lists.fedoraproject.org/thread/F2NRCEXDDUF6WWNPSOMXRJS6BPMTEEVJ/
-# - in RHEL apparently the rpc/rpc.h header was moved too;
-#   Debian has libtirpc, but headers and implementation are still in glibc too
+# - in RHEL apparently the rpc/rpc.h header was moved too
+# - Debian has libtirpc, but headers and implementation are still in glibc too
+#   so there's a risk symbols are resolved from libc while compiling against tirpc headers;
+#   therefore we do not use tirpc when rpc headers are present outside tirpc
 if re.match(r"^Linux", osr):
     extrasrc += ["src/linuxapi.c"]
 
-    if os.path.isdir('/usr/include/tirpc'):
+    if os.path.isdir('/usr/include/tirpc') and not os.path.isfile('/usr/include/rpc/rpc.h'):
         print("Configured to use tirpc library instead of rpcsvc")
         extrainc  += ["/usr/include/tirpc"]
         extralibs += ["tirpc"]

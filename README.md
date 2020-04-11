@@ -21,7 +21,6 @@ Python users.
 ## Module information
 
 <B>The module is still under development.</B>
-In particular, interface design still needs to be made "pythonic".
 
 List of supported operating systems and file systems:
 

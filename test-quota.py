@@ -101,7 +101,7 @@ while True:
             break
 
         except FsQuota.error as e:
-            if (sys.errno is not errno.EPERM):  # ignore EPERM
+            if (e.errno is not errno.EPERM):  # ignore EPERM
                 print("FsQuota.sync failed: %s" % e, file=sys.stderr)
                 print("Choose another file system - quotas not functional on this one", file=sys.stderr)
             else:

@@ -22,8 +22,13 @@ try:
         except:
             qcarg = "*UNDEF*"
 
+        try:
+            st_dev = os.stat(path).st_dev
+        except OSError:
+           st_dev = -1
+
         print("%s # %s # %s # %s # %d # %s #"
-                    % (fsname, path, fstyp, opt, os.stat(path).st_dev, qcarg))
+                    % (fsname, path, fstyp, opt, st_dev, qcarg))
 
 except FsQuota.error as e:
     print("ERROR: %s" % e, file=sys.stderr)
