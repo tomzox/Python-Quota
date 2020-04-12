@@ -13,7 +13,7 @@ import sys
 import FsQuota
 
 try:
-    for fsname, path, fstyp, opt in FsQuota.getmntent():
+    for fsname, path, fstyp, opt in FsQuota.MntTab():
         print("# %s # %s # %s # %s #" % (fsname, path, fstyp, opt))
 
 except FsQuota.error as e:

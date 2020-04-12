@@ -15,9 +15,9 @@ from stat import *
 import FsQuota
 
 try:
-    for fsname, path, fstyp, opt in FsQuota.getmntent():
+    for fsname, path, fstyp, opt in FsQuota.MntTab():
         try:
-            qObj = FsQuota.quota(path)
+            qObj = FsQuota.Quota(path)
             qcarg = qObj.dev;
         except:
             qcarg = "*UNDEF*"

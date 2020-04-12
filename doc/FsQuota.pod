@@ -20,50 +20,51 @@ FsQuota - Interface to file system quotas on UNIX platforms
 
     import FsQuota
 
-    qObj = FsQuota.quota(path [,rpc_host=hostname])
+    qObj = FsQuota.Quota(path [,rpc_host=hostname])
 
-    (block_curr, block_soft, block_hard, block_timelimit,
-     inode_curr, inode_soft, inode_hard, inode_timelimit) =
-    qObj.query([uid [,kind]])
+    (block_curr, bsoft, bhard, btimelimit,
+     inode_curr, isoft, ihard, itimelimit) =
+        qObj.query(uid [,grpquota=1] [,prjquota=1])
 
-    qObj.setqlim(uid, block_soft, block_hard,
-                      inode_soft, inode_hard [,tlo [,kind]])
+    qObj.setqlim(uid, bsoft, bhard, isoft, ihard
+                 [,timelimit_reset={0|1}]
+                 [,grpquota=1] [,prjquota=1])
 
     qObj.sync()
 
     qObj.rpc_opt([option keywords])
 
-    for dev, path, type, opts in FsQuota.getmntent(): ...
+    for dev, path, type, opts in FsQuota.MntTab(): ...
 
 =head1 DESCRIPTION
 
 The B<FsQuota> module provides two classes that allow accessing file
 system quotas from Python scripts:
 
-Instances of the B<quota> class take as main init parameter a path of a
+Instances of the B<Quota> class take as main init parameter a path of a
 mount point (or any path below the mount point). The instance can then be
 used to query or modify quota of users or groups within that file system.
 The class is designed portably, so that the same interfaces work across
 all file system types and UNIX platforms. (Although there are some extra
 options during initialization for certain file systems.)
 
-Instances of the I<getmntent> class allow iterating across the mount
+Instances of the I<MntTab> class allow iterating across the mount
 table.  For each entry in the table, it provides the file system type,
 mount  point and options. (Note this class is usually not required to work
-with the quota class.  It is provided here just for convenience, as the
-functionality is actually used internally by the quota class.)
+with the Quota class.  It is provided here just for convenience, as the
+functionality is actually used internally by the Quota class.)
 
 =head2 Functions
 
 =over 4
 
-=item I<qObj = FsQuota.quota(path [,rpc_host=hostname])>
+=item I<qObj = FsQuota.Quota(path [,rpc_host=hostname])>
 
-This creates a quota object that then is used for querying or modifying
+Creates a Quota object that then is used for querying or modifying
 quotas. In case of special file systems which are known not to suport
 quota, the creation may raise exception B<FsQuota.error>. However note
 the absence of an exception is not a guarantee that the file system
-actually supports quota.
+actually supports quota limits.
 
 When parameter B<rpc_host> is specified, the automatic detection of file
 system types is omitted. In this case the following operations will
@@ -73,7 +74,7 @@ mounted locally. See also the B<rpc_opt()> method for RPC configuration
 options.
 
 Internal behavior: Most importantly, the initialization determines the
-file system type and thus the quota method to be used in following
+file system type and thus the access method to be used in following
 quota operations. Many platforms use the B<quotactl> syscall, but even
 then the type of device parameter to be passed varies from system to
 system. It may be the path of a device file (e.g. B</dev/sda1>) or the
@@ -87,55 +88,86 @@ the given host via a remote procedure call (RPC).  Note: RPC queries
 require I<rquotad(1m)> to be running on the target system. If the daemon
 or host are down, the operations time out after a configurable delay.
 
-=item I<(bc,bs,bh,bt, ic,is,ih,it) = qObj.query(uid, kind)>
+=item I<(bcurr,bsoft,bhard,btime, icurr,isoft,ihard,itime)> =
+I<qObj.query(uid, [keyword_options...])>
 
 Get current usage and quota limits for a given file system and user.
 The user is specified by its numeric UID; defaults to the processes
 real UID.
 
-In I<bc> and I<ic> the current usage in blocks and inodes is returned.
-I<bs> and I<is> are the soft limits, I<bh> and I<ih> hard limits. If the
-soft limit is exceeded, writes by this user will fail for blocks or
-inodes after I<bt> or I<it> is reached. These times are expressed
-as usual, i.e. in elapsed seconds since 00:00 1/Jan/1970 GMT.
+In I<bcurr> and I<icurr> the current usage in blocks and inodes is
+returned.  I<bsoft> and I<isoft> are the soft limits, I<bhard> and
+I<ihard> hard limits. If the soft limit is exceeded, writes by this user
+will fail for blocks or inodes after I<btime> or I<itime> is reached.
+These times are expressed as usual, i.e. in elapsed seconds since 00:00
+1/Jan/1970 GMT.
 
 Note: When the quota limits are not exceeded, the timestamps are
-meaningless and should be ignored. When hard and soft limits are zero,
-this means there is no limit for that user. (On some platforms the query
-may fail with error code I<ESRCH> in that case.)
+meaningless and should be ignored. When hard and soft limits are both
+zero, this means there is no limit for that user. (On some platforms the
+query may fail with error code I<ESRCH> in that case; most however still
+report valid usage values in that case.)
 
-When I<kind> is given and set to 1, the value in I<uid> is taken as
-GID and group quotas are queried. Group quotas may not be supported
-across all platforms (e.g. Linux and other BSD based Unix variants,
-OSF/1 and  AIX - check the quotactl(2) man page on your systems).
+Keyword-only parameters:
 
-When I<kind> is set to 2, project quotas are queried; this is
-currently only supported for XFS. When unsupported, this flag is ignored.
+=over 8
 
-=item I<qObj.setqlim(uid, bs, bh, is, ih, tlo, kind)>
+=item B<grpquota=1>
+
+When parameter B<grpquota> is present and set to True, the value in I<uid>
+is taken as GID and group quotas are queried. Group quotas may not be
+supported across all platforms (e.g. Linux and other BSD based Unix
+variants, OSF/1 and  AIX - check the quotactl(2) man page on your
+systems).
+
+=item B<prjquota=1>
+
+When parameter B<prjquota> is present and set to True, project quotas are
+queried; this is currently only supported for XFS. Exception
+B<FsQuota.error(ENOTSUP)> is raised for unsupported file-systems.
+
+=back
+
+=item I<qObj.setqlim(uid, bsoft, bhard, isoft, ihard [,keyword options...])>
 
 Sets quota limits for the given user. Meanings of parameters I<uid>,
-I<bs>, I<bh>, I<is> and I<ih> are the same as for the B<query> method.
+I<bsoft>, I<bhard>, I<isoft> and I<ihard> are the same as for the B<query>
+method.
 
-Optional parameter I<tlo> defines how time limits are initialized:
-I<0>: The time limits are set to B<NOT STARTED>, i.e. the time limits
-are not initialized until the first write attempt by this user.
-This is the default.
-I<1>: The time limits are set to B<7.0 days>.
-More alternatives (i.e. setting a specific time) aren't available in
-most implementations.
-
-When optional parameter I<kind> is given and set to 1, parameter
-I<uid> is interpreted as GID and the the limit of the corresponding
-group is modified. This is not supported on all platforms.
-When I<kind> is set to 2, project quotas are modified;
-this is currently only supported for XFS. When unsupported, this
-flag is ignored.
+Note all the limit values are optional and default to zero. The parameters
+can also be passed in form of keyword parameters. For example
+I<qObj.setqlim(uid, isoft=10,ihard=20)> would allow unlimited blocks and
+limit inode counts to 10 soft, 20 hard.
 
 Note: if you want to set the quota of a particular user to zero, i.e.
 no write permission, you must not set all limits to zero, since that
 is equivalent to unlimited access. Instead set only the hard limit
 to 0 and the soft limit for example to 1.
+
+Keyword-only parameters:
+
+=item B<timelimit_reset={0|1}>
+
+Optional parameter I<timelimit_reset> defines how time limits are
+initialized: I<0>: The time limits are set to B<NOT STARTED>, i.e. the
+time limits are not initialized until the first write attempt by this
+user.  This is the default when the parameter is omitted.  I<1>: The time
+limits are set to B<7.0 days>.  More alternatives (i.e. setting a specific
+time) aren't available in most implementations.
+
+=item B<grpquota=1>
+
+When parameter B<grpquota> is present and set to True, parameter I<uid> is
+interpreted as GID and the the limit of the corresponding group is
+modified. This is not supported on all platforms.
+
+=item B<prjquota=1>
+
+When parameter B<prjquota> is present and set to True, project quotas are
+modified; this is currently only supported for XFS.  Exception
+B<FsQuota.error(ENOTSUP)> is raised for unsupported file-systems.
+
+=back
 
 Note that the module does not support setting quotas via RPC (even
 though some implementations of I<rpc.rquotad(8)> allow optionally
@@ -163,8 +195,9 @@ parameters are available:
 
 =item B<rpc_port>
 
-Sets the port used by I<rpc.rquotad(8)>. Set 0 to return to default 0,
-which means the remote host's portmapper is used.
+Sets the port used by I<rpc.rquotad(8)>; default value is zero, which
+which means the remote host's portmapper (aka rpcbind) is used. (Note
+in case of the latter you can find out the port using I<rpcinfo -p host>)
 
 =item B<rpc_use_tcp>
 
@@ -178,6 +211,8 @@ Timeout value in milliseconds in case the remote host does not respond.
 
 UID value (i.e. user identifier) to provide for authentication.
 If not specified, this defaults to the UID of the current process.
+For example, you could set the UID here that you later want to
+query, for circumventing a permission error.
 
 =item B<auth_gid>
 
@@ -204,7 +239,7 @@ B<setqlim()> methods for the selected file system.
 
 This attribute indicates 1 is the file system is NFS, else 0.
 
-=item I<iterator = FsQuota.getmntent()>
+=item I<iterator = FsQuota.MntTab()>
 
 This class defines objects that can be used as an iterator which lists all
 entries in the mount table. Each object returned by iteration is a tuple
@@ -235,8 +270,8 @@ Note the mount table contains information about all currently mounted
 varies from system to system (e.g. it may be in file B</etc/mtab>).
 This iterator provides a portable way to read it. (On some systems,
 like B<OSF/1>, this table isn't accessible as a file at all, i.e. only
-via C library interface B<getmntent(3)>). Internally, the iterator will
-call I<setmntent(3)> or the equivalent of your platform upon initialization,
+via C library interfaces). Internally, the iterator will call
+I<setmntent(3)> or the equivalent of your platform upon initialization,
 call I<getmntent(3)> during iteration, and call I<endmntent(3)> upon
 deallocation.
 
@@ -280,6 +315,6 @@ python3(1), edquota(8),
 quotactl(2) or quotactl(7I),
 mount(8), mtab(4) or mnttab(4), quotaon(8),
 setmntent(3), getmntent(3) or getmntinfo(3), endmntent(3),
-rpc(3), rquotad(8) or rpc.rquotad(8).
+rpc(3), rquotad(8) or rpc.rquotad(8), rpcinfo(7).
 
 =cut

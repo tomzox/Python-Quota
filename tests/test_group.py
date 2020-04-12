@@ -20,7 +20,7 @@ import FsQuota
 ##
 path  = "."
 ugid  = 2001
-dogrp = 1
+dogrp = True
 setq  = [123, 124, 50, 100]
 
 typnam = "GID" if dogrp else "UID"
@@ -36,7 +36,7 @@ def fmt_quota_vals(qtup):
                 (qtup[0], qtup[1], qtup[2], bt_str, qtup[4], qtup[5], qtup[6], ft_str))
 
 try:
-    qObj = FsQuota.quota(path)
+    qObj = FsQuota.Quota(path)
     print("Using device/argument \"%s\"" % qObj.dev)
 
     print("Checking quota sync (may fail if quotas not enabled)...")
@@ -44,7 +44,7 @@ try:
 
     try:
         print("Query quotas for %s %d" % (typnam, ugid))
-        qtup = qObj.query(ugid, dogrp)
+        qtup = qObj.query(ugid, grpquota=dogrp)
         print("Quota usage and limits for %s %d are %s" % (typnam, ugid, fmt_quota_vals(qtup)))
 
     except FsQuota.error as e:
@@ -55,11 +55,11 @@ try:
     ##
 
     print("Setting new quota limits...")
-    qObj.setqlim(ugid, *setq, 1, dogrp)
+    qObj.setqlim(ugid, *setq, timelimit_reset=1, grpquota=dogrp)
     print("Quotas set successfully for %s %d" % (typnam, ugid))
 
     print("Reading back new quota limits...")
-    qtup = qObj.query(ugid, dogrp)
+    qtup = qObj.query(ugid, grpquota=dogrp)
     print("Quota usage and limits for %s %d are %s" % (typnam, ugid, fmt_quota_vals(qtup)))
 
     print("Finally checking quota sync again")

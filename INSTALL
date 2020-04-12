@@ -3,9 +3,12 @@ Installation Instructions
 
 Usually all you have to do is:
 
-	python3 setup.py build
-	python3 setup.py test
-	python3 setup.py install
+        python3 setup.py build
+
+        ln -s tests/test_ALL_interactively.py .
+        python3 setup.py test
+
+        python3 setup.py install
 
 If any step fails, regard the following instructions step by step.
 
@@ -52,9 +55,11 @@ Options:
 
 3)  Generate the Makefile & compile: python3 setup.py build
 
-4)  Run "python3 setup.py test" to check if the module routines do work
-    correctly. Run the script once for user-quota and once group-quota,
-    if needed.
+4)  Run tests/test_ALL_interactively.py to check if the module routines
+    do work correctly. Run the script once for user-quota and once
+    group-quota, and for different file-systems, as needed. (Note an
+    easy way to run the script without installing is creating a symlink
+    as shown at the top of this document.)
 
 5)  To install the module: "python3 setup.py install"
 
