@@ -29,14 +29,21 @@ dogrp = False
 typnam = "GID" if dogrp else "UID"
 
 def fmt_quota_vals(qtup):
-    tm = time.localtime(qtup[3])
-    bt_str = ("%04d-%02d-%02d/%02d:%02d" % (tm.tm_year, tm.tm_mon, tm.tm_mday, tm.tm_hour, tm.tm_min))
+    if qtup.btime:
+        tm = time.localtime(qtup.btime)
+        bt_str = ("%04d-%02d-%02d/%02d:%02d" % (tm.tm_year, tm.tm_mon, tm.tm_mday, tm.tm_hour, tm.tm_min))
+    else:
+        bt_str = "0"
 
-    tm = time.localtime(qtup[7])
-    ft_str = ("%04d-%02d-%02d/%02d:%02d" % (tm.tm_year, tm.tm_mon, tm.tm_mday, tm.tm_hour, tm.tm_min))
+    if qtup.itime:
+        tm = time.localtime(qtup.itime)
+        ft_str = ("%04d-%02d-%02d/%02d:%02d" % (tm.tm_year, tm.tm_mon, tm.tm_mday, tm.tm_hour, tm.tm_min))
+    else:
+        ft_str = "0"
 
     return ("%d (%d,%d,%s) %d (%d,%d,%s)" %
-                (qtup[0], qtup[1], qtup[2], bt_str, qtup[4], qtup[5], qtup[6], ft_str))
+                (qtup.bcount, qtup.bsoft, qtup.bhard, bt_str,
+                 qtup.icount, qtup.isoft, qtup.ihard, ft_str))
 
 # ----------------------------------------------------------------------------
 
@@ -54,13 +61,13 @@ try:
         qObj.rpc_opt(rpc_use_tcp=True)
         qtup2 = qObj.query(ugid, grpquota=dogrp)
         if qtup != qtup2:
-            print("ERROR - result not equal: %s" % fmt_quota_vals(qtup));
+            print("ERROR - result not equal: %s" % fmt_quota_vals(qtup))
 
         print(">>> stage 1c: Repeat with explicit authentication")
         qObj.rpc_opt(rpc_use_tcp=False, auth_uid=os.getuid(), auth_gid=os.getgid(), auth_hostname="localhost")
         qtup2 = qObj.query(ugid, grpquota=dogrp)
         if qtup != qtup2:
-            print("ERROR - result not equal: %s" % fmt_quota_vals(qtup));
+            print("ERROR - result not equal: %s" % fmt_quota_vals(qtup))
 
     except FsQuota.error as e:
         print("Query %s %d failed: %s" % (typnam, ugid, e), file=sys.stderr)

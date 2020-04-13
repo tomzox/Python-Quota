@@ -15,7 +15,13 @@
 #define PY_SSIZE_T_CLEAN
 #include "Python.h"
 
-#if !defined (NAMED_TUPLE_GC_BUG)
+#if defined (NAMED_TUPLE_GC_BUG)
+static PyTypeObject FsQuota_QuotaQueryTypeBuf;
+static PyTypeObject FsQuota_MntTabTypeBuf;
+static PyTypeObject * const FsQuota_QuotaQueryType = &FsQuota_QuotaQueryTypeBuf;
+static PyTypeObject * const FsQuota_MntTabType = &FsQuota_MntTabTypeBuf;
+#else
+static PyTypeObject FsQuota_QuotaQueryType;
 static PyTypeObject * FsQuota_MntTabType = NULL;
 #endif
 static PyObject * FsQuotaError;
@@ -461,6 +467,31 @@ FsQuota_OsException(int errnum, const char * desc, const char * path)
 }
 
 //
+// Helper function for allocating and filling a query result tuple with given
+// values.
+//
+static PyObject *
+FsQuota_BuildQuotaResult(uint64_t bc, uint64_t bs, uint64_t bh, uint32_t bt,
+                         uint64_t ic, uint64_t is, uint64_t ih, uint32_t it)
+{
+    PyObject * RETVAL;
+
+    RETVAL = PyStructSequence_New(FsQuota_QuotaQueryType);
+
+    PyStructSequence_SetItem(RETVAL, 0, PyLong_FromLongLong(bc));
+    PyStructSequence_SetItem(RETVAL, 1, PyLong_FromLongLong(bs));
+    PyStructSequence_SetItem(RETVAL, 2, PyLong_FromLongLong(bh));
+    PyStructSequence_SetItem(RETVAL, 3, PyLong_FromLong    (bt));
+
+    PyStructSequence_SetItem(RETVAL, 4, PyLong_FromLongLong(ic));
+    PyStructSequence_SetItem(RETVAL, 5, PyLong_FromLongLong(is));
+    PyStructSequence_SetItem(RETVAL, 6, PyLong_FromLongLong(ih));
+    PyStructSequence_SetItem(RETVAL, 7, PyLong_FromLong    (it));
+
+    return RETVAL;
+}
+
+//
 // Implementation of the Quota.query() method
 //
 static PyObject *
@@ -499,15 +530,14 @@ Quota_query(Quota_ObjectType *self, PyObject *args, PyObject *kwds)
 #endif
         if (!err)
         {
-            RETVAL = Py_BuildValue("KKKiKKKi",
-                                   (long long) QX_DIV(xfs_dqblk.d_bcount),
-                                   (long long) QX_DIV(xfs_dqblk.d_blk_softlimit),
-                                   (long long) QX_DIV(xfs_dqblk.d_blk_hardlimit),
-                                   xfs_dqblk.d_btimer,
-                                   (long long) xfs_dqblk.d_icount,
-                                   (long long) xfs_dqblk.d_ino_softlimit,
-                                   (long long) xfs_dqblk.d_ino_hardlimit,
-                                   xfs_dqblk.d_itimer);
+            RETVAL = FsQuota_BuildQuotaResult(QX_DIV(xfs_dqblk.d_bcount),
+                                              QX_DIV(xfs_dqblk.d_blk_softlimit),
+                                              QX_DIV(xfs_dqblk.d_blk_hardlimit),
+                                              xfs_dqblk.d_btimer,
+                                              xfs_dqblk.d_icount,
+                                              xfs_dqblk.d_ino_softlimit,
+                                              xfs_dqblk.d_ino_hardlimit,
+                                              xfs_dqblk.d_itimer);
         }
         else
             FsQuota_QuotaCtlException(self, errno, NULL);
@@ -521,15 +551,14 @@ Quota_query(Quota_ObjectType *self, PyObject *args, PyObject *kwds)
         err = vx_quotactl(VX_GETQUOTA, self->m_qcarg, uid, CADR &vxfs_dqb);
         if (!err)
         {
-            RETVAL = Py_BuildValue("KKKiKKKi",
-                                   (long long) Q_DIV(vxfs_dqb.dqb_curblocks),
-                                   (long long) Q_DIV(vxfs_dqb.dqb_bsoftlimit),
-                                   (long long) Q_DIV(vxfs_dqb.dqb_bhardlimit),
-                                   vxfs_dqb.dqb_btimelimit,
-                                   (long long) vxfs_dqb.dqb_curfiles,
-                                   (long long) vxfs_dqb.dqb_fsoftlimit,
-                                   (long long) vxfs_dqb.dqb_fhardlimit,
-                                   vxfs_dqb.dqb_ftimelimit);
+            RETVAL = FsQuota_BuildQuotaResult(Q_DIV(vxfs_dqb.dqb_curblocks),
+                                              Q_DIV(vxfs_dqb.dqb_bsoftlimit),
+                                              Q_DIV(vxfs_dqb.dqb_bhardlimit),
+                                              vxfs_dqb.dqb_btimelimit,
+                                              vxfs_dqb.dqb_curfiles,
+                                              vxfs_dqb.dqb_fsoftlimit,
+                                              vxfs_dqb.dqb_fhardlimit,
+                                              vxfs_dqb.dqb_ftimelimit);
         }
         else
             FsQuota_QuotaCtlException(self, errno, NULL);
@@ -550,15 +579,14 @@ Quota_query(Quota_ObjectType *self, PyObject *args, PyObject *kwds)
             err = afs_getquota(self->m_qcarg, &maxQuota, &blocksUsed);
             if (!err)
             {
-                RETVAL = Py_BuildValue("iiiiiiii",
-                                       blocksUsed,
-                                       maxQuota,
-                                       maxQuota,
-                                       0,
-                                       0,
-                                       0,
-                                       0,
-                                       0);
+                RETVAL = FsQuota_BuildQuotaResult(blocksUsed,
+                                                  maxQuota,
+                                                  maxQuota,
+                                                  0,
+                                                  0,
+                                                  0,
+                                                  0,
+                                                  0);
             }
             else
                 FsQuota_QuotaCtlException(self, errno, NULL);
@@ -575,15 +603,14 @@ Quota_query(Quota_ObjectType *self, PyObject *args, PyObject *kwds)
             err = getnfsquota(self->m_rpc_host, self->m_qcarg, uid, is_grpquota, &self->m_rpc_opt, &rpc_err_str, &rslt);
             if (!err)
             {
-                RETVAL = Py_BuildValue("KKKiKKKi",
-                                       (long long) Q_DIV(rslt.bcur),
-                                       (long long) Q_DIV(rslt.bsoft),
-                                       (long long) Q_DIV(rslt.bhard),
-                                       rslt.btime,
-                                       (long long) rslt.fcur,
-                                       (long long) rslt.fsoft,
-                                       (long long) rslt.fhard,
-                                       rslt.ftime);
+                RETVAL = FsQuota_BuildQuotaResult(Q_DIV(rslt.bcur),
+                                                  Q_DIV(rslt.bsoft),
+                                                  Q_DIV(rslt.bhard),
+                                                  rslt.btime,
+                                                  rslt.fcur,
+                                                  rslt.fsoft,
+                                                  rslt.fhard,
+                                                  rslt.ftime);
             }
             else if (rpc_err_str != NULL)
                 FsQuota_QuotaCtlException(self, ECOMM, rpc_err_str);
@@ -612,15 +639,14 @@ Quota_query(Quota_ObjectType *self, PyObject *args, PyObject *kwds)
                 if (   (quota_get(qh, &qk_blocks, &qv_blocks) >= 0)
                     && (quota_get(qh, &qk_files, &qv_files) >= 0) )
                 {
-                    RETVAL = Py_BuildValue("KKKiKKKi",
-                                           (long long) Q_DIV(qv_blocks.qv_usage),
-                                           (long long) Q_DIV(qv_blocks.qv_softlimit),
-                                           (long long) Q_DIV(qv_blocks.qv_hardlimit),
-                                           qv_blocks.qv_expiretime,
-                                           (long long) qv_files.qv_usage,
-                                           (long long) qv_files.qv_softlimit,
-                                           (long long) qv_files.qv_hardlimit,
-                                           qv_files.qv_expiretime);
+                    RETVAL = FsQuota_BuildQuotaResult(Q_DIV(qv_blocks.qv_usage),
+                                                      Q_DIV(qv_blocks.qv_softlimit),
+                                                      Q_DIV(qv_blocks.qv_hardlimit),
+                                                      qv_blocks.qv_expiretime,
+                                                      qv_files.qv_usage,
+                                                      qv_files.qv_softlimit,
+                                                      qv_files.qv_hardlimit,
+                                                      qv_files.qv_expiretime);
                 }
                 quota_close(qh);
             }
@@ -661,15 +687,14 @@ Quota_query(Quota_ObjectType *self, PyObject *args, PyObject *kwds)
                                    uid, CADR &user_quota);
                     if (!err)
                     {
-                        RETVAL = Py_BuildValue("KKKiKKKi",
-                                               user_quota.bused,
-                                               user_quota.bsoft,
-                                               user_quota.bhard,
-                                               user_quota.btime,
-                                               user_quota.ihard,
-                                               user_quota.isoft,
-                                               user_quota.iused,
-                                               user_quota.itime);
+                        RETVAL = FsQuota_BuildQuotaResult(user_quota.bused,
+                                                          user_quota.bsoft,
+                                                          user_quota.bhard,
+                                                          user_quota.btime,
+                                                          user_quota.ihard,
+                                                          user_quota.isoft,
+                                                          user_quota.iused,
+                                                          user_quota.itime);
                     }
                 }
                 else
@@ -690,15 +715,14 @@ Quota_query(Quota_ObjectType *self, PyObject *args, PyObject *kwds)
 #endif /* not USE_IOCTL */
             if (!err && (RETVAL == NULL))
             {
-                RETVAL = Py_BuildValue("KKKiKKKi",
-                                       (long long) Q_DIV(dqblk.QS_BCUR),
-                                       (long long) Q_DIV(dqblk.QS_BSOFT),
-                                       (long long) Q_DIV(dqblk.QS_BHARD),
-                                       dqblk.QS_BTIME,
-                                       (long long) dqblk.QS_FCUR,
-                                       (long long) dqblk.QS_FSOFT,
-                                       (long long) dqblk.QS_FHARD,
-                                       dqblk.QS_FTIME);
+                RETVAL = FsQuota_BuildQuotaResult(Q_DIV(dqblk.QS_BCUR),
+                                                  Q_DIV(dqblk.QS_BSOFT),
+                                                  Q_DIV(dqblk.QS_BHARD),
+                                                  dqblk.QS_BTIME,
+                                                  dqblk.QS_FCUR,
+                                                  dqblk.QS_FSOFT,
+                                                  dqblk.QS_FHARD,
+                                                  dqblk.QS_FTIME);
             }
             else if (err)
                 FsQuota_QuotaCtlException(self, errno, NULL);
@@ -1296,6 +1320,28 @@ static PyTypeObject QuotaTypeDef =
     //.tp_members = Quota_Members,
 };
 
+static PyStructSequence_Field QuotaQueryType_Members[] =
+{
+    { "bcount", "Number of blocks currently used" },
+    { "bsoft",  "Soft limit for block count (or 0 if none)" },
+    { "bhard",  "Hard limit for block count (or 0 if none)" },
+    { "btime",  "Time when an exceeded soft block limit turns into a hard limit (or n/a when not exceeded)" },
+    { "icount", "Number of inodes (i.e. files) currently used" },
+    { "isoft",  "Soft limit for inode count (or 0 if none)" },
+    { "ihard",  "Hard limit for inode count (or 0 if none)" },
+    { "itime",  "Time when an exceeded soft inode limit turns into a hard limit (or n/a when not exceeded)" },
+    { NULL, NULL }
+};
+
+static PyStructSequence_Desc QuotaQuery_Desc =
+{
+    "FsQuota.QueryLimits",
+    "Tuple returned by Quota.query(), containing quota usage and limits",
+    QuotaQueryType_Members,
+    8
+};
+
+
 // ----------------------------------------------------------------------------
 // Sub-functions for iterating across the mount table
 
@@ -1658,9 +1704,6 @@ MntTab_IterNext(MntTab_ObjectType *self)
 
     if ((self->iterIndex >= 0) && my_getmntent(&self->mntent, str_buf) == 0)
     {
-#if defined (NAMED_TUPLE_GC_BUG)
-        RETVAL = Py_BuildValue("ssss", str_buf[0], str_buf[1], str_buf[2], str_buf[3]);
-#else
         RETVAL = PyStructSequence_New(FsQuota_MntTabType);
         if (str_buf[0] != NULL)
             PyStructSequence_SetItem(RETVAL, 0, PyUnicode_FromString(str_buf[0]));
@@ -1670,7 +1713,7 @@ MntTab_IterNext(MntTab_ObjectType *self)
             PyStructSequence_SetItem(RETVAL, 2, PyUnicode_FromString(str_buf[2]));
         if (str_buf[3] != NULL)
             PyStructSequence_SetItem(RETVAL, 3, PyUnicode_FromString(str_buf[3]));
-#endif
+
         self->iterIndex += 1;
     }
     else
@@ -1701,7 +1744,6 @@ static PyTypeObject MntTabTypeDef =
     //.tp_methods = MntTab_MethodsDef,
 };
 
-#if !defined (NAMED_TUPLE_GC_BUG)
 static PyStructSequence_Field MntTabType_Members[] =
 {
     { "mnt_fsname", NULL },
@@ -1713,12 +1755,11 @@ static PyStructSequence_Field MntTabType_Members[] =
 
 static PyStructSequence_Desc MntTabType_Desc =
 {
-    "mntent",
-    "Mount table entry",
+    "FsQuota.MntEnt",
+    "Mount table entry, as returned by iterator class FsQuota.MntTab",
     MntTabType_Members,
     4
 };
-#endif
 
 // ----------------------------------------------------------------------------
 //
@@ -1921,9 +1962,12 @@ PyInit_FsQuota(void)
         return NULL;
     }
 
-#if !defined (NAMED_TUPLE_GC_BUG)
-    FsQuota_MntTabType = PyStructSequence_NewType(&MntTabType_Desc);
-    if (FsQuota_MntTabType == NULL)
+#if defined (NAMED_TUPLE_GC_BUG)
+    if (PyStructSequence_InitType2(&FsQuota_QuotaQueryTypeBuf, &QuotaQuery_Desc) != 0)
+#else
+    FsQuota_QuotaQueryType = PyStructSequence_NewType(&QuotaQuery_Desc);
+    if (FsQuota_QuotaQueryType == NULL)
+#endif
     {
         Py_DECREF(&MntTabTypeDef);
         Py_XDECREF(FsQuotaError);
@@ -1931,7 +1975,20 @@ PyInit_FsQuota(void)
         Py_DECREF(module);
         return NULL;
     }
+
+#if defined (NAMED_TUPLE_GC_BUG)
+    if (PyStructSequence_InitType2(&FsQuota_MntTabTypeBuf, &MntTabType_Desc) != 0)
+#else
+    FsQuota_MntTabType = PyStructSequence_NewType(&MntTabType_Desc);
+    if (FsQuota_MntTabType == NULL)
 #endif
+    {
+        Py_DECREF(&MntTabTypeDef);
+        Py_XDECREF(FsQuotaError);
+        Py_CLEAR(FsQuotaError);
+        Py_DECREF(module);
+        return NULL;
+    }
 
     return module;
 }

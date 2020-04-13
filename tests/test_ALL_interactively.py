@@ -31,20 +31,21 @@ if not sys.stdin.isatty() or not sys.stdout.isatty():
 # Helper function for printing quota query results
 #
 def fmt_quota_vals(qtup):
-    if qtup[1] or qtup[2]:
-        tm = time.localtime(qtup[3])
+    if qtup.btime:
+        tm = time.localtime(qtup.btime)
         bt_str = ("%04d-%02d-%02d/%02d:%02d" % (tm.tm_year, tm.tm_mon, tm.tm_mday, tm.tm_hour, tm.tm_min))
     else:
-        bt_str = "*n/a*"
+        bt_str = "0"
 
-    if qtup[5] or qtup[6]:
-        tm = time.localtime(qtup[7])
+    if qtup.itime:
+        tm = time.localtime(qtup.itime)
         ft_str = ("%04d-%02d-%02d/%02d:%02d" % (tm.tm_year, tm.tm_mon, tm.tm_mday, tm.tm_hour, tm.tm_min))
     else:
-        ft_str = "*n/a*"
+        ft_str = "0"
 
     return ("%d (%d,%d,%s) %d (%d,%d,%s)" %
-                (qtup[0], qtup[1], qtup[2], bt_str, qtup[4], qtup[5], qtup[6], ft_str))
+                (qtup.bcount, qtup.bsoft, qtup.bhard, bt_str,
+                 qtup.icount, qtup.isoft, qtup.ihard, ft_str))
 
 #
 # Ask user for choosing user or group quotas
@@ -117,9 +118,9 @@ print("\nQuery this fs with process (real) %s %d" % (n_uid_gid, uid_val))
 try:
     qtup = qObj.query(uid_val, grpquota=is_group)
 
-    print("Your usage and limits are %s\n" % fmt_quota_vals(qtup))
+    print("Your usage and limits are %s" % fmt_quota_vals(qtup))
 except FsQuota.error as e:
-    print("FsQuota.query(%s) failed: %s\n" % (qObj.dev, e), file=sys.stderr)
+    print("FsQuota.query(%s) failed: %s" % (qObj.dev, e), file=sys.stderr)
 
 
 ##
@@ -127,7 +128,7 @@ except FsQuota.error as e:
 ##
 
 while True:
-    uid_val = input("Enter a different %s to get quota for: " % n_uid_gid)
+    uid_val = input("\nEnter a different %s to get quota for: " % n_uid_gid)
     try:
         uid_val = int(uid_val)
         break
@@ -136,43 +137,53 @@ while True:
 
 try:
     qtup = qObj.query(uid_val, grpquota=is_group)
-    print("Usage and limits for %s %d are %s\n" % (n_uid_gid, uid_val, fmt_quota_vals(qtup)))
+    print("Usage and limits for %s %d are %s" % (n_uid_gid, uid_val, fmt_quota_vals(qtup)))
 except FsQuota.error as e:
-    print("FsQuota.query(%s,%d,%d) failed: %s\n" % (qObj.dev, uid_val, is_group, e), file=sys.stderr)
+    print("FsQuota.query(%s,%d,%d) failed: %s" % (qObj.dev, uid_val, is_group, e), file=sys.stderr)
 
 
 ##
 ##  Test querying quota via RPC
 ##
 
-path = os.path.abspath(path)
-print("Query localhost:%s via RPC." % path)
+if qObj.is_nfs:
+    # path is already mounted via NFS: get server-side mount point to avoid recursion
+    match = re.match(r"^([^:]+):(/.*)$", qObj.dev)
+    if match:
+        path = match.group(2)
+    else: # should never happen
+        path = "/"
+else:
+    path = os.path.abspath(path)
+
+print("\nQuery your quota from localhost:%s via forced RPC." % path)
 
 qObj = FsQuota.Quota(path, rpc_host="localhost")
 
 try:
-    qtup = qObj.query(uid_val, grpquota=is_group)
+    qtup = qObj.query(os.getuid(), grpquota=is_group)
 
-    print("Your usage and limits are %s\n" % fmt_quota_vals(qtup))
+    print("Your usage and limits are %s" % fmt_quota_vals(qtup))
 except FsQuota.error as e:
     print("Failed to query localhost: %s" % e)
 
-print("\nQuery localhost via RPC for %s %d." % (n_uid_gid, uid_val))
+print("\nQuery %s %d from localhost:%s via RPC." % (n_uid_gid, uid_val, path))
 
 try:
     qtup = qObj.query(uid_val, grpquota=is_group)
-    print("Usage and limits for %s %d are %s\n" % (n_uid_gid, uid_val, fmt_quota_vals(qtup)))
+    print("Usage and limits for %s %d are %s" % (n_uid_gid, uid_val, fmt_quota_vals(qtup)))
 except FsQuota.error as e:
     print("Failed to query via RPC: %s" % e)
-    print("Retrying with fake authentication for UID %d." % uid_val)
-    qObj.rpc_opt(auth_uid=uid_val);
+
+    print("Retrying with fake authentication for %s %d." % (n_uid_gid, uid_val))
+    qObj.rpc_opt(auth_uid=uid_val, rpc_use_tcp=1)
     try:
         qtup = qObj.query(uid_val, grpquota=is_group)
-        print("Usage and limits for %s %d are %s\n" % (n_uid_gid, uid_val, fmt_quota_vals(qtup)))
+        print("Usage and limits for %s %d are %s" % (n_uid_gid, uid_val, fmt_quota_vals(qtup)))
     except FsQuota.error as e:
         print("Failed to query RPC again: %s" % e)
 
-    qObj.rpc_opt(auth_uid=-1, auth_gid=-1);
+    qObj.rpc_opt(auth_uid=-1, auth_gid=-1)
 
 
 ##
@@ -190,7 +201,7 @@ while True:
             print("Heads-up: Trying to set quota for remote path will fail")
         break
     except FsQuota.error as e:
-        print("%s: mount point not found\n" % path, file=sys.stderr)
+        print("%s: mount point not found" % path, file=sys.stderr)
 
 if path:
     bs = None
@@ -210,7 +221,7 @@ if path:
 
             try:
                 qtup = qObj.query(uid_val, grpquota=is_group)
-                print("Read-back modified limits: %s\n" % fmt_quota_vals(qtup))
+                print("Read-back modified limits: %s" % fmt_quota_vals(qtup))
             except FsQuota.error as e:
                 print("Failed to read back quota change limits: %s" % e)
         except FsQuota.error as e:

@@ -26,14 +26,21 @@ setq  = [123, 124, 50, 100]
 typnam = "GID" if dogrp else "UID"
 
 def fmt_quota_vals(qtup):
-    tm = time.localtime(qtup[3])
-    bt_str = ("%04d-%02d-%02d/%02d:%02d" % (tm.tm_year, tm.tm_mon, tm.tm_mday, tm.tm_hour, tm.tm_min))
+    if qtup.btime:
+        tm = time.localtime(qtup.btime)
+        bt_str = ("%04d-%02d-%02d/%02d:%02d" % (tm.tm_year, tm.tm_mon, tm.tm_mday, tm.tm_hour, tm.tm_min))
+    else:
+        bt_str = "0"
 
-    tm = time.localtime(qtup[7])
-    ft_str = ("%04d-%02d-%02d/%02d:%02d" % (tm.tm_year, tm.tm_mon, tm.tm_mday, tm.tm_hour, tm.tm_min))
+    if qtup.itime:
+        tm = time.localtime(qtup.itime)
+        ft_str = ("%04d-%02d-%02d/%02d:%02d" % (tm.tm_year, tm.tm_mon, tm.tm_mday, tm.tm_hour, tm.tm_min))
+    else:
+        ft_str = "0"
 
     return ("%d (%d,%d,%s) %d (%d,%d,%s)" %
-                (qtup[0], qtup[1], qtup[2], bt_str, qtup[4], qtup[5], qtup[6], ft_str))
+                (qtup.bcount, qtup.bsoft, qtup.bhard, bt_str,
+                 qtup.icount, qtup.isoft, qtup.ihard, ft_str))
 
 try:
     qObj = FsQuota.Quota(path)

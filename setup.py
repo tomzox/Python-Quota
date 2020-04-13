@@ -162,10 +162,12 @@ with open(os.path.join(this_directory, 'README.md'), encoding='utf-8') as fh:
 if not os.path.isfile(myconfig_h):
     os.symlink(config, myconfig_h)
 
-# Disable use of named tuples in C module as this causes crash in GC:
-# "Fatal Python error: type_traverse() called for non-heap type"
-# most likely known issue: https://bugs.python.org/issue28709 - fixed in 3.8
-extradef += [('NAMED_TUPLE_GC_BUG', 1)]
+# Enable work-around for bugs in PyStructSequence_NewType (i.e. for
+# creating named tuples in C module; causing crash in GC:
+# "Fatal Python error: type_traverse() called for non-heap type")
+# Known issue: https://bugs.python.org/issue28709 - fixed in 3.8
+if (sys.version_info[0] == 3) and (sys.version_info[1] < 8):
+    extradef += [('NAMED_TUPLE_GC_BUG', 1)]
 
 ext = Extension('FsQuota',
                 sources       = ['src/FsQuota.c'] + extrasrc,

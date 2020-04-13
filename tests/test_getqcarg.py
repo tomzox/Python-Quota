@@ -18,7 +18,7 @@ try:
     for fsname, path, fstyp, opt in FsQuota.MntTab():
         try:
             qObj = FsQuota.Quota(path)
-            qcarg = qObj.dev;
+            qcarg = qObj.dev
         except:
             qcarg = "*UNDEF*"
 
