@@ -64,13 +64,13 @@ else:
     exit(1)
 
 config = "hints/" + config
-print("Using %s for myconfig.h" % config)
+print("Using %s for myconfig.h" % config, file=sys.stderr)
 
 if (    os.path.isfile(myconfig_h)
     and (not os.path.islink(myconfig_h) or not (os.readlink(myconfig_h) == config))):
     print("\nFATAL: myconfig.h already exists.\n\n" +
          "You need to do a \"make clean\" before configuring for a new platform.\n" +
-         "If that doesn't help, remove myconfig.h manually.")
+         "If that doesn't help, remove myconfig.h manually.", file=sys.stderr)
     exit(1)
 
 
@@ -90,10 +90,10 @@ if re.match(r"^SunOS", osr):
     if os.path.isfile('/usr/include/sys/fs/vx_quota.h'):
         extradef += [('SOLARIS_VXFS', 1)];
         extrasrc += ["src/vxquotactl.c"]
-        print("Configured with the VERITAS File System on Solaris")
+        print("Configured with the VERITAS File System on Solaris", file=sys.stderr)
     else:
         # no warning because newer versions of Solaris have internal VxFS support
-        #print("Configured without VxFS support")
+        #print("Configured without VxFS support", file=sys.stderr)
         pass
 
 # check whether we are using the NetBSD quota library
@@ -114,7 +114,7 @@ if re.match(r"^Linux", osr):
     extrasrc += ["src/linuxapi.c"]
 
     if os.path.isdir('/usr/include/tirpc') and not os.path.isfile('/usr/include/rpc/rpc.h'):
-        print("Configured to use tirpc library instead of rpcsvc")
+        print("Configured to use tirpc library instead of rpcsvc", file=sys.stderr)
         extrainc  += ["/usr/include/tirpc"]
         extralibs += ["tirpc"]
     else:
@@ -123,7 +123,7 @@ if re.match(r"^Linux", osr):
                   "         Likely compilation will fail. Recommend to either install package\n" +
                   "         \"libtirpc-dev\", or disable RPC (network file system) support by\n" +
                   "         adding the following switch to myconfig.h:\n" +
-                  "         #define NO_RPC\n")
+                  "         #define NO_RPC\n", file=sys.stderr)
         extralibs += ["rpcsvc"]
 
 # ----------------------------------------------------------------------------
@@ -156,8 +156,15 @@ class MyClean(install):
 # ----------------------------------------------------------------------------
 # Finally execute the setup command
 
-with open(os.path.join(this_directory, 'README.md'), encoding='utf-8') as fh:
+with open(os.path.join(this_directory, 'doc/README.rst'), encoding='utf-8') as fh:
     long_description = fh.read()
+with open(os.path.join(this_directory, 'doc/FsQuota.rst'), encoding='utf-8') as fh:
+    api_doc = fh.read()
+    match = re.match(r"[\x00-\xff]*?(?=^SYNOPSIS$)", api_doc, re.MULTILINE)
+    if match:
+        long_description += "\n\n" + api_doc[match.end():]
+    else:
+        print("ERROR: Failed to find SYNOPSIS in FsQuota.rst", file=sys.stderr)
 
 if not os.path.isfile(myconfig_h):
     os.symlink(config, myconfig_h)
@@ -182,13 +189,13 @@ setup(name='FsQuota',
       version='0.0.2',
       description='Interface to file system quotas on UNIX platforms',
       long_description=long_description,
-      long_description_content_type="text/markdown",
+      long_description_content_type="text/x-rst",
       author='T. Zoerner',
       author_email='tomzo@users.sourceforge.net',
       url='https://github.com/tomzox/Python-Quota',
       license = "GNU GPLv2+",
       classifiers=[
-          'Development Status :: 3 - Alpha',
+          'Development Status :: 4 - Beta',
           "Programming Language :: C",
           "Programming Language :: Python :: 3",
           'Topic :: System :: Filesystems',
@@ -201,11 +208,11 @@ setup(name='FsQuota',
           "Operating System :: POSIX :: HP-UX",
           "Operating System :: POSIX :: IRIX",
           "Operating System :: POSIX :: SunOS/Solaris",
-          "Operating System :: UNIX",
           "License :: OSI Approved :: GNU General Public License v2 or later (GPLv2+)"
          ],
       keywords="file-system, quota, quotactl, mtab, getmntent",
       platforms=['posix'],
       ext_modules=[ext],
       cmdclass={'clean': MyClean},
+      python_requires='>=3.2',
      )

@@ -5,4 +5,5 @@ include doc/*
 include CHANGES
 include INSTALL
 include LICENSE
+include TODO
 exclude myconfig.h

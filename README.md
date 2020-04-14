@@ -20,18 +20,26 @@ Python users.
 
 ## Module information
 
-List of supported operating systems and file systems:
+The following operating systems and file systems are supported transparently
+through a common API.
 
-* SunOS 4.1.3
+Supported operating systems:
+
+* Linux - kernel 2.0.30 and later, including XFS
+* BSDi 2, FreeBSD 3.x - 4.9, OpenBSD & NetBSD (no RPC)
+* SunOS 4.1.3 (aka Solaris 1)
 * Solaris 2.4 - 2.10
 * HP-UX 9.0x & 10.10 & 10.20 & 11.00
 * IRIX 5.2 & 5.3 & 6.2 - 6.5
 * OSF/1 & Digital Unix 4
-* BSDi 2, FreeBSD 3.x - 4.9, OpenBSD & NetBSD (no RPC)
-* Linux - kernel 2.0.30 and later, including XFS
 * AIX 4.1, 4.2 and 5.3
+
+Supported file systems:
+
+* Standard file systems of the platforms listed above
+* NFS (Network file system) on all of the above
 * AFS (Andrew File System) on many of the above (see INSTALL)
-* VxFS (Veritas File System) on Solaris 2.
+* VxFS (Veritas File System) on Solaris 2
 
 ## Documentation
 
