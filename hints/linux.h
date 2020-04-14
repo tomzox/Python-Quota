@@ -17,8 +17,8 @@
 
 #include <rpc/rpc.h>
 #include <rpc/pmap_prot.h>
-#include <rpcsvc/rquota.h>
-/* #include "src/rquota.h" */
+/*#include <rpcsvc/rquota.h>*/  /* does not support EXT_RQUOTA */
+#include "src/rquota.h"
 #include <sys/socket.h>
 #include <netdb.h>
 

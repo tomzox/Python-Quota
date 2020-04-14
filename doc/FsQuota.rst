@@ -16,7 +16,7 @@ SYNOPSIS
         qObj.query(uid [,grpquota=1] [,prjquota=1])
 
     qObj.setqlim(uid, bsoft, bhard, isoft, ihard
-                 [,timelimit_reset={0|1}]
+                 [,timereset=1]
                  [,grpquota=1] [,prjquota=1])
 
     qObj.sync()
@@ -38,7 +38,7 @@ The class is designed portably, so that the same interfaces work across
 all file system types and UNIX platforms. (Although there are some extra
 options during initialization for certain file systems.)
 
-Instances of the *MntTab* class allow iterating across the mount
+Instances of the **MntTab** class allow iterating across the mount
 table.  For each entry in the table, it provides the file system type,
 mount  point and options. (Note this class is usually not required to work
 with the Quota class.  It is provided here just for convenience, as the
@@ -58,27 +58,27 @@ quota, the creation may raise exception **FsQuota.error**. However note
 the absence of an exception is not a guarantee that the file system
 actually supports quota limits.
 
-When parameter **rpc_host** is specified, the automatic detection of file
-system types is omitted. In this case the following operations will
-address the file system containing the given path on the given remote host
-using RPC. This could be used to query even file systems that are not
-mounted locally. See also the **rpc_opt()** method for RPC configuration
-options.
-
 Internal behavior: Most importantly, the initialization determines the
 file system type and thus the access method to be used in following
 quota operations. Many platforms use the **quotactl** syscall, but even
 then the type of device parameter to be passed varies from system to
-system. It may be the path of a device file (e.g. **/dev/sda1**) or the
+system. It may be the path of a device file (e.g. `/dev/sda1`) or the
 path of the mount point or the quotas file at the top of the file system
-(e.g. **/home/quotas**). For the rare cases you need this information,
-it can be queried via the **dev** attribute.
+(e.g. `/home/quotas`). For the rare cases you need this information,
+it can be queried via the **Quota.dev** attribute.
 
-The given mount point may also be on a remove file system (e.g. mounted
-via Network File System, NFS), which has the module transparently query
+The given mount point may also be on a remote file system (e.g. mounted
+via Network File System, NFS), which has the class transparently query
 the given host via a remote procedure call (RPC).  Note: RPC queries
 require *rquotad(1m)* to be running on the target system. If the daemon
 or host are down, the operations time out after a configurable delay.
+
+When parameter **rpc_host** is specified, the automatic detection of file
+system type is omitted. In this case the following operations will
+address the file system containing the given path on the given remote host
+using RPC. This mode should normally not be needed, but could for example
+be used for accessing file systems that are not mounted locally. See also
+the **rpc_opt()** method for additional RPC configuration options.
 
 Quota.query()
 -------------
@@ -114,8 +114,7 @@ for the first time. These times are expressed as elapsed seconds since
 
 Note when hard and soft limits are both zero, this means there is no limit
 for that user. (On some platforms the query may fail with error code
-*ESRCH* in that case; most however still report valid usage values in
-that case.)
+*ESRCH* in that case; most however still report valid usage values.)
 
 Optional keyword-only parameters:
 
@@ -132,6 +131,8 @@ Optional keyword-only parameters:
     XFS. Exception **FsQuota.error(ENOTSUP)** is raised for unsupported
     file-systems.
 
+It is an error to select both group and project quota in the same query.
+
 Method Quota.setqlim()
 ----------------------
 
@@ -140,12 +141,12 @@ Method Quota.setqlim()
     qObj.setqlim(uid, bsoft, bhard, isoft, ihard [,keyword options...])
 
 Sets quota limits for the given user. Meanings of parameters *uid*,
-*bsoft*, *bhard*, *isoft* and *ihard* are the same as for the **query**
+*bsoft*, *bhard*, *isoft* and *ihard* are the same as for the **query()**
 method.
 
 Note all the limit values are optional and default to zero. The parameters
 can also be passed in form of keyword parameters. For example
-*qObj.setqlim(uid, isoft=10,ihard=20)* would limit inode counts to 10
+`qObj.setqlim(uid, isoft=10,ihard=20)` would limit inode counts to 10
 soft, 20 hard, but remove limits for block count. (Note it's not possible
 to set only block or inode limits repsectively; to do so query current
 limits first and then pass those values to setqlim if you want to keep
@@ -158,12 +159,12 @@ to 0 and the soft limit to a non-zero value.
 
 Optional keyword-only parameters:
 
-:timelimit_reset:
-    Optional parameter *timelimit_reset* defines how time limits are
+:timereset:
+    Optional parameter **timereset** defines how time limits are
     initialized: When the assigned value is *False*, time limits are set to
-    **NOT STARTED** (i.e. the time limits are not initialized until the first
+    `NOT STARTED` (i.e. the time limits are not initialized until the first
     write attempt by this user). This is the default when the parameter is
-    omitted. When assigned *True*, the time limits are set to **7.0 days**.
+    omitted. When assigned *True*, the time limits are set to `7.0 days`.
     More alternatives (i.e. setting a specific time) aren't available in most
     implementations.
 
@@ -177,7 +178,9 @@ Optional keyword-only parameters:
     modified; this is currently only supported for XFS.  Exception
     **FsQuota.error(ENOTSUP)** is raised for unsupported file-systems.
 
-Note that the module does not support setting quotas via RPC (even
+It is an error to select both group and project quota in the same query.
+
+Note that the class does not support setting quotas via RPC (even
 though some implementations of *rpc.rquotad(8)* allow optionally
 enabling this, but it seems a bad idea for security.)
 
@@ -264,7 +267,7 @@ string:
 
 Note the mount table contains information about all currently mounted
 (local or remote) file systems.  The format and location of this table
-varies from system to system (e.g. it may be in file **/etc/mtab**).
+varies from system to system (e.g. it may be in file `/etc/mtab`).
 This iterator provides a portable way to read it. (On some systems,
 like **OSF/1**, this table isn't accessible as a file at all, i.e. only
 via C library interfaces). Internally, the iterator will call
@@ -280,15 +283,17 @@ iteration with that of the path in question.
 ERROR HANDLING
 ==============
 
-All methods raise exception *FsQuota.error* upon errors. The exception
-class is derived from **OSError** and thus contains firstly a numerical
-error code in attribute *errno* (copied from *errno* in most cases), and
-secondly a derived error message in attribute *strerror*.
+All methods raise exception **FsQuota.error** upon errors. The exception
+class is derived from exception **OSError** and thus contains firstly a
+numerical error code in attribute **errno** (copied from *errno* in most
+cases), secondly a derived error message in attribute **strerror**, and
+when applicable, thirdly a file name in attribute **filename**.
 
 Note the error string is adapted to the context of quota operations and
-therefore not always identical to the text returned by **strerror(3)**.
-The normal error descriptions don't always make sense for quota errors
-(e.g. **ESRCH**: *No such process*, here: *No quota for this user*)
+therefore not always identical to the text returned by
+**strerror(ex.errno)**.  This is necessary as normal error descriptions
+don't always make sense for quota errors (e.g. *ESRCH*: *No such process*,
+here: *No quota for this user*)
 
 AUTHORS
 =======

@@ -43,7 +43,11 @@ extralibdirs = []
 #
 # Select a configuration header file based on OS & revision
 #
-osr = subprocess.run(['uname', '-rs'], stdout=subprocess.PIPE).stdout.decode('utf-8')
+if sys.version_info[1] >= 5:
+    osr = subprocess.run(['uname', '-rs'], stdout=subprocess.PIPE).stdout.decode('utf-8')
+else:  # subprocess.run() does not exist before 3.5
+    ps = subprocess.Popen(['uname', '-rs'], stdout=subprocess.PIPE)
+    osr = ps.communicate()[0].decode('utf-8')
 
 if   re.match(r"^SunOS 4\.1", osr) : config='sunos_4_1.h'
 elif re.match(r"^SunOS 5", osr)    : config='solaris_2.h'
@@ -53,7 +57,7 @@ elif re.match(r"^IRIX\d* 6", osr)  : config='irix_6.h'
 elif re.match(r"^OSF1", osr)       : config='dec_osf.h'
 elif re.match(r"^Linux", osr)      : config='linux.h'
 elif re.match(r"^AIX", osr)        : config='aix_4_1.h'
-elif (re.match(r"^BSD\/OS 2", osr) or
+elif (re.match(r"^dragonfly", osr, flags=re.IGNORECASE) or
       re.match(r"^Darwin", osr)    or
       re.match(r"^FreeBSD", osr)   or
       re.match(r"^NetBSD", osr)    or
@@ -97,8 +101,8 @@ if re.match(r"^SunOS", osr):
         pass
 
 # check whether we are using the NetBSD quota library
-match1 = re.match(r"^NetBSD 5\.99\.(\d+)", osr, flags=re.IGNORECASE)
-match2 = re.match(r"^NetBSD (\d)(\.|$)", osr, flags=re.IGNORECASE)
+match1 = re.match(r"^NetBSD 5\.99\.(\d+)", osr)
+match2 = re.match(r"^NetBSD (\d)", osr)
 if (   (match1 and (int(match1.group(1)) >= 59))
     or (match2 and (int(match2.group(1)) >= 6))):
     extralibs += ["quota"]
@@ -186,7 +190,7 @@ ext = Extension('FsQuota',
                )
 
 setup(name='FsQuota',
-      version='0.0.2',
+      version='0.1.0',
       description='Interface to file system quotas on UNIX platforms',
       long_description=long_description,
       long_description_content_type="text/x-rst",
@@ -203,8 +207,8 @@ setup(name='FsQuota',
           'Intended Audience :: Developers',
           'Intended Audience :: System Administrators',
           "Operating System :: POSIX :: Linux",
-          "Operating System :: POSIX :: AIX",
           "Operating System :: POSIX :: BSD",
+          "Operating System :: POSIX :: AIX",
           "Operating System :: POSIX :: HP-UX",
           "Operating System :: POSIX :: IRIX",
           "Operating System :: POSIX :: SunOS/Solaris",

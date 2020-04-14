@@ -1,7 +1,9 @@
 # Python File-system Quota module
 
 This repository contains the sources of the Python file-system quota module,
-which allows accessing file system quotas on UNIX platforms from Python scripts.
+which has its official home at [PyPi](https://pypi.org/project/FsQuota/).
+
+The quota module allows accessing file system quotas on UNIX platforms.
 This works both for locally mounted file systems and network file systems (via
 RPC, i.e. Remote Procedure Call) for all the operating systems listed below.
 The interface is designed to be independent of UNIX flavours as well as file
@@ -25,8 +27,8 @@ through a common API.
 
 Supported operating systems:
 
-* Linux - kernel 2.0.30 and later, including XFS
-* BSDi 2, FreeBSD 3.x - 4.9, OpenBSD & NetBSD (no RPC)
+* Linux - kernel 2.0.30 - 4.15
+* FreeBSD 3 - 12.1, OpenBSD 2.2 - 6.6 & NetBSD 5 - 9
 * SunOS 4.1.3 (aka Solaris 1)
 * Solaris 2.4 - 2.10
 * HP-UX 9.0x & 10.10 & 10.20 & 11.00
@@ -38,6 +40,7 @@ Supported file systems:
 
 * Standard file systems of the platforms listed above
 * NFS (Network file system) on all of the above
+* XFS on Linux and IRIX 6
 * AFS (Andrew File System) on many of the above (see INSTALL)
 * VxFS (Veritas File System) on Solaris 2
 

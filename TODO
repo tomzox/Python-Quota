@@ -1,9 +1,12 @@
 optional enhancements:
 - RPC use persistent client connection (configurable)
   add support for __enter__ and __exit__ for "with"
+- NetBSD: call quota_open() only once during __init__
+- FreeBSD >= 8.1: could use quotafile functions in -lutil
+- support setting quota limits via RPC (v2)
 - getmntent: distinguish end-of-list from error (when possible)?
 - use tirpc even if SUN-RPC is implemented in libc too:
-  requires linker options to control symbol resolution
-- unit-tests (as far as possible)
+  requires linker options to control symbol resolution order
+- automated unit-tests (as far as possible)
 - automatically define NDEBUG for debug builds (if possible?)
 - generate UNIX man page for dist

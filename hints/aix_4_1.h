@@ -18,7 +18,7 @@
 
 #include <rpc/rpc.h>
 #include <rpc/pmap_prot.h>
-#include "include/rquota.h"
+#include "src/rquota.h"
 
 #include <jfs/quota.h>
 #include <sys/statfs.h>

@@ -22,9 +22,11 @@ import FsQuota
 path  = "/mnt"
 remote_path  = "/data/tmp/qtest"
 remote_host  = "localhost"
-ugid  = os.getuid()
-other_ugid  = 32000   # for permission test when not run by admin
+unused_port  = 29875;  # for RPC error testing
+unknown_host = "UNKNOWN_HOSTNAME";  # for RPC error testing
 dogrp = False
+ugid  = os.getgid() if dogrp else os.getuid()
+other_ugid  = 2001 if dogrp else 32000   # for permission test when not run by admin
 
 typnam = "GID" if dogrp else "UID"
 
@@ -50,7 +52,7 @@ def fmt_quota_vals(qtup):
 try:
     print(">>> stage 1: test locally mounted NFS fs: %s" % path)
     qObj = FsQuota.Quota(path)
-    print("Using device/argument \"%s\"" % qObj.dev)
+    print("Using device \"%s\"" % qObj.dev)
 
     try:
         print("Query quotas for %s %d" % (typnam, ugid))
@@ -95,7 +97,7 @@ try:
 
     print(">>> stage 3: force use of RPC to %s:%s" % (remote_host, remote_path))
     qObj = FsQuota.Quota(remote_path, rpc_host=remote_host)
-    print("Using device/argument \"%s\"" % qObj.dev)
+    print("Using device \"%s\"" % qObj.dev)
 
     try:
         print("Query quotas for %s %d" % (typnam, ugid))
@@ -107,8 +109,16 @@ try:
 
     # -------------------------------------------------------------------------
 
-    print(">>> stage 4: force use of non-existing remote port")
-    qObj.rpc_opt(rpc_port=29875, rpc_timeout=2000, rpc_use_tcp=True)
+    print(">>> stage 4: force use of inactive remote port")
+    qObj.rpc_opt(rpc_port=unused_port, rpc_timeout=2000, rpc_use_tcp=True)
+    try:
+        qtup = qObj.query(ugid, grpquota=dogrp)
+    except FsQuota.error as e:
+        print("Query failed (expected): %s" % (e), file=sys.stderr)
+    qObj.rpc_opt(rpc_port=0)
+
+    print(">>> stage 4b: force use of unknown remote host")
+    qObj = FsQuota.Quota(remote_path, rpc_host=unknown_host)
     try:
         qtup = qObj.query(ugid, grpquota=dogrp)
     except FsQuota.error as e:

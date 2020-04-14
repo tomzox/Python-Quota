@@ -1,3 +1,14 @@
+Changes in Python-FsQuota 0.1.0 (April 2020)
+- interface clean-up: renamed option "timelimit_reset" "timereset"
+- merged compile-fixes & enhancements for BSDs & RPC from Perl-Quota 1.8.1
+  (see below), plus:
+  - FreeBSD: compile-fix getmntinfo() & getqcarg: stat.st_dev comparison
+  - NetBSD, query: missing exception upon error from quota_get()
+  - when compiled with NO_RPC: throw exception in __init__ for NFS
+- setup.py: compatibility to Python 3.4
+- added new smoke test script: tests/test_smoke.py
+=> module verified on Linux and the latest BSDs on local FS and NFS
+
 Changes in Python-FsQuota 0.0.2 (April 2020)
 - Switched to Object-Oriented API
 
@@ -8,6 +19,41 @@ Changes in Python-FsQuota 0.0.1 (April 2020)
 * History of the Perl module, which is base for the Python module;            *
 * included here to acknowledge all the people who contributed in the past.    *
 ===============================================================================
+
+Changes in 1.8.1 (April 2020)
+- correction to Q_XQUOTASYNC update done in 1.8.0: return value inverted
+- compile-fixes and enhancements for latest versions of the BSDs:
+  - compile fix: FreeBSD lacks define RQUOTA_USRQUOTA in rpcsvc/rquota.h
+  - NetBSD: map QUOTA_NOLIMIT to 0 for consistency with other platforms
+  - DragonFly support prepared (untested); obsolete BSD/OS removed
+  - getmntent(): decode numerical values of fs type and options to strings
+  - renamed compile-switch HAVE_STATVFS: too generic (conflict Python.h)
+- fixes for group quota support via RPC (i.e. v2 aka extended RPC):
+  - removed use of USE_EXT_RQUOTA in include/rquota.h: switch is
+    defined only later, thus extended quota was inadvertedly disabled
+  - Linux & OpenBSD: switched from rpcsvc/rquota.h to internal rquota.h,
+    as sys header lacks definition for extended RPC
+  - getnfsquota(): don't use v1 RPC for group quota if v2 fails;
+    return error instead
+  - adjusted order of elements in ext_getquota_args to match XDR encoding
+    (just to avoid confusion; no harm)
+- setqlim: raise error in case of truncation of given limits to 32-bit
+- test.pl:
+  - added smoke test: run automatically upon $ENV{AUTOMATED_TESTING}
+  - enhanced "forced RPC" test: ask for host:path, allow skipping
+
+Changes in 1.8.0 (April 2020)
+- revised "tirpc" change in 1.7.3: use "-ltirpc" only when SUN-RPC is
+  NOT included in libc; else we may compile against tirpc but linker
+  may resolved against libc; leads to memory corruption in auth_destroy()
+- cntd. attempt at fixing Makefile.PL for build on NetBSD release > 6
+- Backport of minor fixes & enhancements done while porting to Python
+  - extended test scripts (RPC test; read-back&verify limits after setqlim)
+  - RPC result handling: removed forced ESRCH error upon 0 limits
+    so that behavior matches that of local query (at least on Linux)
+  - corrected Quota::strerr() for errors caused in Sun-RPC library funcs
+  - updated include/quotaio_xfs.h to latest version in Linux headers
+    and use newer (~2004) interface Q_XQUOTASYNC for Quota::sync()
 
 Changes in Perl-Quota 1.7.4 (March 2020)
 - Build fixes for NetBSD release > 6 and Apple/Darwin

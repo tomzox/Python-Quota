@@ -1,12 +1,16 @@
 Installation Instructions
 -------------------------
 
-Usually all you have to do is:
+Usually the module should install automatically using PIP. Note since
+the module is implemented in C, a C compiler and kernel-headers are
+pre-requisite for installation from source.
 
-        python3 setup.py build
+When installing manually use the following steps:
 
-        ln -s tests/test_ALL_interactively.py .
         python3 setup.py test
+
+        env PYTHONPATH=. python3 tests/test_ALL_smoke.py
+        env PYTHONPATH=. python3 tests/test_ALL_interactively.py
 
         python3 setup.py install
 
@@ -53,13 +57,11 @@ Options:
     don't have /usr/include/rpcsvc/rquota.h, include "include/rquota.h"
     instead. If you don't need RPC at all, just define NO_RPC.
 
-3)  Generate the Makefile & compile: python3 setup.py build
+3)  Generate the Makefile & compile: python3 setup.py test
 
 4)  Run tests/test_ALL_interactively.py to check if the module routines
     do work correctly. Run the script once for user-quota and once
-    group-quota, and for different file-systems, as needed. (Note an
-    easy way to run the script without installing is creating a symlink
-    as shown at the top of this document.)
+    group-quota, and for different file-systems, as needed.
 
 5)  To install the module: "python3 setup.py install"
 

@@ -31,7 +31,7 @@ static PyTypeObject FsQuota_MntTabTypeBuf;
 static PyTypeObject * const FsQuota_QuotaQueryType = &FsQuota_QuotaQueryTypeBuf;
 static PyTypeObject * const FsQuota_MntTabType = &FsQuota_MntTabTypeBuf;
 #else
-static PyTypeObject FsQuota_QuotaQueryType = NULL;
+static PyTypeObject * FsQuota_QuotaQueryType = NULL;
 static PyTypeObject * FsQuota_MntTabType = NULL;
 #endif
 
@@ -48,7 +48,7 @@ typedef struct
 #ifndef NO_MNTENT
     FILE *mtab;
 #else /* NO_MNTENT */
-#ifdef HAVE_STATVFS
+#ifdef USE_STATVFS_MNTINFO
     struct statvfs *mntp;
     struct statvfs *mtab;
 #else
@@ -56,7 +56,7 @@ typedef struct
     struct statfs *mtab;
 #endif
     int mtab_size;
-    char flag_str_buf[16];
+    char str_mnt_flag[100];
 #endif /* NO_MNTENT */
 #else /* AIX */
     struct vmount *mtab;
@@ -215,27 +215,37 @@ getnfsquota( char *hostp, char *fsnamep, int uid, int is_grpquota,
     // First try USE_EXT_RQUOTAPROG (Extended quota RPC)
     //
     ext_gq_args.gqa_pathp = fsnamep;
-    ext_gq_args.gqa_id = uid;
     ext_gq_args.gqa_type = (is_grpquota ? GQA_TYPE_GRP : GQA_TYPE_USR);
+    ext_gq_args.gqa_id = uid;
 
     if (callaurpc(hostp, RQUOTAPROG, EXT_RQUOTAVERS, RQUOTAPROC_GETQUOTA,
-                  xdr_ext_getquota_args, &ext_gq_args,
-                  xdr_getquota_rslt, &gq_rslt,
+                  (xdrproc_t)xdr_ext_getquota_args, (char*) &ext_gq_args,
+                  (xdrproc_t)xdr_getquota_rslt, (char*) &gq_rslt,
                   opt, rpc_err_str) != 0)
 #endif
     {
-        //
-        // Fall back to RQUOTAPROG if the server (or client via compile switch)
-        // don't support extended quota RPC
-        //
-        gq_args.gqa_pathp = fsnamep;
-        gq_args.gqa_uid = uid;
-
-        if (callaurpc(hostp, RQUOTAPROG, RQUOTAVERS, RQUOTAPROC_GETQUOTA,
-                      (xdrproc_t)xdr_getquota_args, (char*) &gq_args,
-                      (xdrproc_t)xdr_getquota_rslt, (char*) &gq_rslt,
-                      opt, rpc_err_str) != 0)
+        if (!is_grpquota)
         {
+            //
+            // Fall back to RQUOTAPROG if the server (or client via compile switch)
+            // doesn't support extended quota RPC (i.e. only supports user quota)
+            //
+            gq_args.gqa_pathp = fsnamep;
+            gq_args.gqa_uid = uid;
+
+            if (callaurpc(hostp, RQUOTAPROG, RQUOTAVERS, RQUOTAPROC_GETQUOTA,
+                          (xdrproc_t)xdr_getquota_args, (char*) &gq_args,
+                          (xdrproc_t)xdr_getquota_rslt, (char*) &gq_rslt,
+                          opt, rpc_err_str) != 0)
+            {
+                return -1;
+            }
+        }
+        else
+        {
+#ifndef USE_EXT_RQUOTA
+            *rpc_err_str = "RPC: group quota not supported by RPC";
+#endif
             return -1;
         }
     }
@@ -293,14 +303,14 @@ getnfsquota( char *hostp, char *fsnamep, int uid, int is_grpquota,
         // Note: all systems except Linux return relative times
         if (gq_rslt.GQR_RQUOTA.rq_btimeleft == 0)
             rslt->btime = 0;
-        else if (gq_rslt.GQR_RQUOTA.rq_btimeleft + 10*365*24*60*60 < tv.tv_sec)
+        else if (gq_rslt.GQR_RQUOTA.rq_btimeleft + 10*365*24*60*60 < (u_int)tv.tv_sec)
             rslt->btime = tv.tv_sec + gq_rslt.GQR_RQUOTA.rq_btimeleft;
         else
             rslt->btime = gq_rslt.GQR_RQUOTA.rq_btimeleft;
 
         if (gq_rslt.GQR_RQUOTA.rq_ftimeleft == 0)
             rslt->ftime = 0;
-        else if (gq_rslt.GQR_RQUOTA.rq_ftimeleft + 10*365*24*60*60 < tv.tv_sec)
+        else if (gq_rslt.GQR_RQUOTA.rq_ftimeleft + 10*365*24*60*60 < (u_int)tv.tv_sec)
             rslt->ftime = tv.tv_sec + gq_rslt.GQR_RQUOTA.rq_ftimeleft;
         else
             rslt->ftime = gq_rslt.GQR_RQUOTA.rq_ftimeleft;
@@ -346,7 +356,8 @@ xdr_getquota_rslt( XDR *xdrs, struct getquota_rslt *gqp )
 {
     return (xdr_union(xdrs,
                       (int *) &gqp->GQR_STATUS, (char *) &gqp->GQR_RQUOTA,
-                      gq_des, (xdrproc_t) xdr_void));
+                      (struct xdr_discrim *) gq_des,  // cast to remove const
+                      (xdrproc_t) xdr_void));
 }
 
 bool_t
@@ -509,12 +520,12 @@ FsQuota_BuildQuotaResult(uint64_t bc, uint64_t bs, uint64_t bh, uint32_t bt,
 // Implementation of the Quota.query() method
 //
 PyDoc_STRVAR(Quota_query__doc__,
-"query(uid, *, grpquota=False, projquota=False) -> FsQuota.QueryResult\n\n"
-"Query quota usage and limits for the given user.\n\n"
-"When either grpquota or projquota is set to True, the query returns "
-"group or project quotas instead of user quotas. Only one of these "
-"options should be True. Project quotas are supported only by XFS "
-"file systems.");
+    "query(uid, *, grpquota=False, projquota=False) -> FsQuota.QueryResult\n\n"
+    "Query quota usage and limits for the given user.\n\n"
+    "When either grpquota or projquota is set to True, the query returns "
+    "group or project quotas instead of user quotas. Only one of these "
+    "options should be True. Project quotas are supported only by XFS "
+    "file systems.");
 
 static PyObject *
 Quota_query(Quota_ObjectType *self, PyObject *args, PyObject *kwds)
@@ -571,7 +582,7 @@ Quota_query(Quota_ObjectType *self, PyObject *args, PyObject *kwds)
         }
     }
     else
-#endif
+#endif  /* SGI_XFS */
 #ifdef SOLARIS_VXFS
     if (self->m_dev_fs_type == QUOTA_DEV_VXFS)
     {
@@ -594,7 +605,7 @@ Quota_query(Quota_ObjectType *self, PyObject *args, PyObject *kwds)
         }
     }
     else
-#endif
+#endif  /* SOLARIS_VXFS */
 #ifdef AFSQUOTA
     if (self->m_dev_fs_type == QUOTA_DEV_AFS)
     {
@@ -625,147 +636,164 @@ Quota_query(Quota_ObjectType *self, PyObject *args, PyObject *kwds)
         }
     }
     else
-#endif
+#endif  /* AFSQUOTA */
+#if defined(HAVE_JFS2)
+    if (self->m_dev_fs_type == QUOTA_DEV_JFS2)
     {
-        if (self->m_dev_fs_type == QUOTA_DEV_NFS)
+        // AIX quotactl doesn't fail if path does not exist!?
+        struct stat st;
+        if (stat(self->m_qcarg, &st) == 0)
         {
-#ifndef NO_RPC
-            T_QUOTA_RPC_RESULT rslt;
-            char * rpc_err_str = NULL;
-            err = getnfsquota(self->m_rpc_host, self->m_qcarg, uid, is_grpquota, &self->m_rpc_opt, &rpc_err_str, &rslt);
+            quota64_t user_quota;
+
+            err = quotactl(self->m_qcarg, QCMD(Q_J2GETQUOTA, (is_grpquota ? GRPQUOTA : USRQUOTA)),
+                           uid, CADR &user_quota);
             if (!err)
             {
-                RETVAL = FsQuota_BuildQuotaResult(Q_DIV(rslt.bcur),
-                                                  Q_DIV(rslt.bsoft),
-                                                  Q_DIV(rslt.bhard),
-                                                  rslt.btime,
-                                                  rslt.fcur,
-                                                  rslt.fsoft,
-                                                  rslt.fhard,
-                                                  rslt.ftime);
+                RETVAL = FsQuota_BuildQuotaResult(user_quota.bused,
+                                                  user_quota.bsoft,
+                                                  user_quota.bhard,
+                                                  user_quota.btime,
+                                                  user_quota.ihard,
+                                                  user_quota.isoft,
+                                                  user_quota.iused,
+                                                  user_quota.itime);
             }
-            else if (rpc_err_str != NULL)
-            {
-                FsQuota_QuotaCtlException(self, ECOMM, rpc_err_str);
-            }
-            else
-            {
-                FsQuota_QuotaCtlException(self, errno, NULL);
-            }
-#else /* NO_RPC */
-            FsQuota_QuotaCtlException(self, ENOSYS, "RPC not supported for this platform");
-            err = -1;
-#endif /* NO_RPC */
+        }
+        else
+            err = 1;
+    }
+    else
+#endif  /* HAVE_JFS2 */
+#ifndef NO_RPC
+    if (self->m_dev_fs_type == QUOTA_DEV_NFS)
+    {
+        T_QUOTA_RPC_RESULT rslt;
+        char * rpc_err_str = NULL;
+        err = getnfsquota(self->m_rpc_host, self->m_qcarg, uid, is_grpquota, &self->m_rpc_opt, &rpc_err_str, &rslt);
+        if (!err)
+        {
+            RETVAL = FsQuota_BuildQuotaResult(Q_DIV(rslt.bcur),
+                                              Q_DIV(rslt.bsoft),
+                                              Q_DIV(rslt.bhard),
+                                              rslt.btime,
+                                              rslt.fcur,
+                                              rslt.fsoft,
+                                              rslt.fhard,
+                                              rslt.ftime);
+        }
+        else if (rpc_err_str != NULL)
+        {
+            FsQuota_QuotaCtlException(self, EIO, rpc_err_str);
         }
         else
         {
+            FsQuota_QuotaCtlException(self, errno, NULL);
+        }
+    }
+    else
+#endif  /* NO_RPC */
+    {
 #ifdef NETBSD_LIBQUOTA
-            struct quotahandle *qh = quota_open(self->m_qcarg);
-            if (qh != NULL)
+        struct quotahandle *qh = quota_open(self->m_qcarg);
+        if (qh != NULL)
+        {
+            struct quotakey qk_blocks, qk_files;
+            struct quotaval qv_blocks, qv_files;
+
+            qk_blocks.qk_idtype = /*fall-through*/
+            qk_files.qk_idtype = is_grpquota ? QUOTA_IDTYPE_GROUP : QUOTA_IDTYPE_USER;
+            qk_blocks.qk_id = qk_files.qk_id = uid;
+            qk_blocks.qk_objtype = QUOTA_OBJTYPE_BLOCKS;
+            qk_files.qk_objtype = QUOTA_OBJTYPE_FILES;
+
+            if ((quota_get(qh, &qk_blocks, &qv_blocks) >= 0) &&
+                (quota_get(qh, &qk_files, &qv_files) >= 0) )
             {
-                struct quotakey qk_blocks, qk_files;
-                struct quotaval qv_blocks, qv_files;
-
-                qk_blocks.qk_idtype = /*fall-through*/
-                qk_files.qk_idtype = is_grpquota ? QUOTA_IDTYPE_GROUP : QUOTA_IDTYPE_USER;
-                qk_blocks.qk_id = qk_files.qk_id = uid;
-                qk_blocks.qk_objtype = QUOTA_OBJTYPE_BLOCKS;
-                qk_files.qk_objtype = QUOTA_OBJTYPE_FILES;
-
-                if ((quota_get(qh, &qk_blocks, &qv_blocks) >= 0) &&
-                    (quota_get(qh, &qk_files, &qv_files) >= 0) )
+                // adapt to common "unlimited" semantics
+                if ((qv_blocks.qv_softlimit == QUOTA_NOLIMIT) &&
+                    (qv_blocks.qv_hardlimit == QUOTA_NOLIMIT))
                 {
-                    RETVAL = FsQuota_BuildQuotaResult(Q_DIV(qv_blocks.qv_usage),
-                                                      Q_DIV(qv_blocks.qv_softlimit),
-                                                      Q_DIV(qv_blocks.qv_hardlimit),
-                                                      qv_blocks.qv_expiretime,
-                                                      qv_files.qv_usage,
-                                                      qv_files.qv_softlimit,
-                                                      qv_files.qv_hardlimit,
-                                                      qv_files.qv_expiretime);
+                  qv_blocks.qv_hardlimit = qv_blocks.qv_softlimit = 0;
                 }
-                quota_close(qh);
-            }
-#else /* not NETBSD_LIBQUOTA */
-            struct dqblk dqblk;
-#ifdef USE_IOCTL
-            struct quotactl qp;
-            int fd = -1;
-
-            qp.op = Q_GETQUOTA;
-            qp.uid = uid;
-            qp.addr = (char *)&dqblk;
-            if ((fd = open(self->m_qcarg, O_RDONLY)) != -1)
-            {
-                err = (ioctl(fd, Q_QUOTACTL, &qp) == -1);
-                close(fd);
+                if ((qv_files.qv_softlimit == QUOTA_NOLIMIT) &&
+                    (qv_files.qv_hardlimit == QUOTA_NOLIMIT))
+                {
+                  qv_files.qv_hardlimit = qv_files.qv_softlimit = 0;
+                }
+                RETVAL = FsQuota_BuildQuotaResult(Q_DIV(qv_blocks.qv_usage),
+                                                  Q_DIV(qv_blocks.qv_softlimit),
+                                                  Q_DIV(qv_blocks.qv_hardlimit),
+                                                  qv_blocks.qv_expiretime,
+                                                  qv_files.qv_usage,
+                                                  qv_files.qv_softlimit,
+                                                  qv_files.qv_hardlimit,
+                                                  qv_files.qv_expiretime);
             }
             else
-            {
-                err = 1;
-            }
-#else /* not USE_IOCTL */
-#ifdef Q_CTL_V3  /* Linux */
-            err = linuxquota_query(self->m_qcarg, uid, is_grpquota, &dqblk);
-#else /* not Q_CTL_V3 */
-#ifdef Q_CTL_V2
-#ifdef AIX
-            // AIX quotactl doesn't fail if path does not exist!?
-            struct stat st;
-#if defined(HAVE_JFS2)
-            if (self->m_dev_fs_type == QUOTA_DEV_JFS2)
-            {
-                if (stat(self->m_qcarg, &st) == 0)
-                {
-                    quota64_t user_quota;
-
-                    err = quotactl(self->m_qcarg, QCMD(Q_J2GETQUOTA, (is_grpquota ? GRPQUOTA : USRQUOTA)),
-                                   uid, CADR &user_quota);
-                    if (!err)
-                    {
-                        RETVAL = FsQuota_BuildQuotaResult(user_quota.bused,
-                                                          user_quota.bsoft,
-                                                          user_quota.bhard,
-                                                          user_quota.btime,
-                                                          user_quota.ihard,
-                                                          user_quota.isoft,
-                                                          user_quota.iused,
-                                                          user_quota.itime);
-                    }
-                }
-                else
-                    err = 1;
-            }
-#endif /* HAVE_JFS2 */
-            else if (stat(self->m_qcarg, &st) != 0)
-            {
-                err = 1;
-            }
-            else
-#endif /* AIX */
-            err = quotactl(self->m_qcarg, QCMD(Q_GETQUOTA, (is_grpquota ? GRPQUOTA : USRQUOTA)), uid, CADR &dqblk);
-#else /* not Q_CTL_V2 */
-            err = quotactl(Q_GETQUOTA, self->m_qcarg, uid, CADR &dqblk);
-#endif /* not Q_CTL_V2 */
-#endif /* Q_CTL_V3 */
-#endif /* not USE_IOCTL */
-            if (!err && (RETVAL == NULL))
-            {
-                RETVAL = FsQuota_BuildQuotaResult(Q_DIV(dqblk.QS_BCUR),
-                                                  Q_DIV(dqblk.QS_BSOFT),
-                                                  Q_DIV(dqblk.QS_BHARD),
-                                                  dqblk.QS_BTIME,
-                                                  dqblk.QS_FCUR,
-                                                  dqblk.QS_FSOFT,
-                                                  dqblk.QS_FHARD,
-                                                  dqblk.QS_FTIME);
-            }
-            else if (err)
             {
                 FsQuota_QuotaCtlException(self, errno, NULL);
             }
-#endif /* not NETBSD_LIBQUOTA */
+            quota_close(qh);
         }
+        else
+        {
+            FsQuota_QuotaCtlException(self, errno, NULL);
+        }
+#else /* not NETBSD_LIBQUOTA */
+        struct dqblk dqblk;
+#ifdef USE_IOCTL
+        struct quotactl qp;
+        int fd = -1;
+
+        qp.op = Q_GETQUOTA;
+        qp.uid = uid;
+        qp.addr = (char *)&dqblk;
+        if ((fd = open(self->m_qcarg, O_RDONLY)) != -1)
+        {
+            err = (ioctl(fd, Q_QUOTACTL, &qp) == -1);
+            close(fd);
+        }
+        else
+        {
+            err = 1;
+        }
+#else /* not USE_IOCTL */
+#ifdef Q_CTL_V3  /* Linux */
+        err = linuxquota_query(self->m_qcarg, uid, is_grpquota, &dqblk);
+#else /* not Q_CTL_V3 */
+#ifdef Q_CTL_V2
+#ifdef AIX
+        // AIX quotactl doesn't fail if path does not exist!?
+        struct stat st;
+        if (stat(self->m_qcarg, &st) != 0)
+        {
+            err = 1;
+        }
+        else
+#endif /* AIX */
+        err = quotactl(self->m_qcarg, QCMD(Q_GETQUOTA, (is_grpquota ? GRPQUOTA : USRQUOTA)), uid, CADR &dqblk);
+#else /* not Q_CTL_V2 */
+        err = quotactl(Q_GETQUOTA, self->m_qcarg, uid, CADR &dqblk);
+#endif /* not Q_CTL_V2 */
+#endif /* Q_CTL_V3 */
+#endif /* not USE_IOCTL */
+        if (!err && (RETVAL == NULL))
+        {
+            RETVAL = FsQuota_BuildQuotaResult(Q_DIV(dqblk.QS_BCUR),
+                                              Q_DIV(dqblk.QS_BSOFT),
+                                              Q_DIV(dqblk.QS_BHARD),
+                                              dqblk.QS_BTIME,
+                                              dqblk.QS_FCUR,
+                                              dqblk.QS_FSOFT,
+                                              dqblk.QS_FHARD,
+                                              dqblk.QS_FTIME);
+        }
+        else if (err)
+        {
+            FsQuota_QuotaCtlException(self, errno, NULL);
+        }
+#endif /* not NETBSD_LIBQUOTA */
     }
     return RETVAL;
 }
@@ -774,15 +802,15 @@ Quota_query(Quota_ObjectType *self, PyObject *args, PyObject *kwds)
 // Implementation of the Quota.seqlim() method
 //
 PyDoc_STRVAR(Quota_setqlim__doc__,
-"setqlim(uid, bsoft, bhard, isoft, ihard, *, grpquota=False, projquota=False)\n\n"
-"Set the given block and inode quota limits for the given user\n\n"
-"When either grpquota or projquota is set to True, the query returns "
-"group or project quotas instead of user quotas. Only one of these "
-"options should be True. Project quotas are supported only by XFS "
-"file systems.\n\n"
-"Limit parameters may also be specified in form of keyword parameters "
-"using the names given in the signature above. Omitted values default "
-"to zero.");
+    "setqlim(uid, bsoft, bhard, isoft, ihard, *, grpquota=False, projquota=False)\n\n"
+    "Set the given block and inode quota limits for the given user\n\n"
+    "When either grpquota or projquota is set to True, the query returns "
+    "group or project quotas instead of user quotas. Only one of these "
+    "options should be True. Project quotas are supported only by XFS "
+    "file systems.\n\n"
+    "Limit parameters may also be specified in form of keyword parameters "
+    "using the names given in the signature above. Omitted values default "
+    "to zero.");
 
 static PyObject *
 Quota_setqlim(Quota_ObjectType *self, PyObject *args, PyObject *kwds)
@@ -797,7 +825,7 @@ Quota_setqlim(Quota_ObjectType *self, PyObject *args, PyObject *kwds)
     int     is_prjquota = FALSE;
 
     static char * kwlist[] = {"uid", "bsoft", "bhard", "isoft", "ihard",
-                              "timelimit_reset", "grpquota", "prjquota", NULL};
+                              "timereset", "grpquota", "prjquota", NULL};
 
     if (!PyArg_ParseTupleAndKeywords(args, kwds, "i|KKKK$ppp", kwlist,
                                      &uid, &bs, &bh, &fs, &fh,
@@ -808,21 +836,13 @@ Quota_setqlim(Quota_ObjectType *self, PyObject *args, PyObject *kwds)
 
     PyObject * RETVAL = Py_None;
 
-#ifndef NETBSD_LIBQUOTA
-    struct dqblk dqblk;
-#endif
-#ifdef USE_IOCTL
-    struct quotactl qp;
-    int fd;
-
-    qp.op = Q_SETQLIM;
-    qp.uid = uid;
-    qp.addr = (char *)&dqblk;
-#endif
-
     if (self->m_dev_fs_type == QUOTA_DEV_INVALID)
     {
         RETVAL = FsQuota_QuotaCtlException(self, EINVAL, "FsQuota.Quota instance is uninitialized");
+    }
+    else if (self->m_dev_fs_type == QUOTA_DEV_NFS)
+    {
+        RETVAL = FsQuota_QuotaCtlException(self, ENOTSUP, "Setting quota on NFS-mount is not supported");
     }
     else if (is_prjquota && (self->m_dev_fs_type != QUOTA_DEV_XFS))
     {
@@ -998,6 +1018,7 @@ Quota_setqlim(Quota_ObjectType *self, PyObject *args, PyObject *kwds)
             RETVAL = FsQuota_QuotaCtlException(self, errno, NULL);
         }
 #else /* not NETBSD_LIBQUOTA */
+        struct dqblk dqblk;
         memset(&dqblk, 0, sizeof(dqblk));
         dqblk.QS_BSOFT = Q_MUL(bs);
         dqblk.QS_BHARD = Q_MUL(bh);
@@ -1005,34 +1026,50 @@ Quota_setqlim(Quota_ObjectType *self, PyObject *args, PyObject *kwds)
         dqblk.QS_FSOFT = fs;
         dqblk.QS_FHARD = fh;
         dqblk.QS_FTIME = timelimflag;
-#ifdef USE_IOCTL
-        if ((fd = open(self->m_qcarg, O_RDONLY)) != -1)
+
+        // check for truncation during assignment
+        if ((sizeof(dqblk.QS_BSOFT) < sizeof(uint64_t)) &&
+            ((bs|bh|fs|fh) & 0xFFFFFFFF00000000ULL))
         {
-            if (ioctl(fd, Q_QUOTACTL, &qp) != 0)
-            {
-                RETVAL = FsQuota_QuotaCtlException(self, errno, NULL);
-            }
-            close(fd);
+            RETVAL = FsQuota_OsException(EINVAL, "Device supports only 32-bit quota", NULL);
         }
         else
         {
-            RETVAL = FsQuota_OsException(errno, "opening device", self->m_qcarg);
-        }
-#else
+#ifdef USE_IOCTL
+            int fd;
+            if ((fd = open(self->m_qcarg, O_RDONLY)) != -1)
+            {
+                struct quotactl qp;
+                qp.op = Q_SETQLIM;
+                qp.uid = uid;
+                qp.addr = (char *)&dqblk;
+
+                if (ioctl(fd, Q_QUOTACTL, &qp) != 0)
+                {
+                    RETVAL = FsQuota_QuotaCtlException(self, errno, NULL);
+                }
+                close(fd);
+            }
+            else
+            {
+                RETVAL = FsQuota_OsException(errno, "opening device", self->m_qcarg);
+            }
+#else  /* not USE_IOCTL */
 #ifdef Q_CTL_V3  /* Linux */
-        int err = linuxquota_setqlim (self->m_qcarg, uid, is_grpquota, &dqblk);
+            int err = linuxquota_setqlim (self->m_qcarg, uid, is_grpquota, &dqblk);
 #else
 #ifdef Q_CTL_V2
-        int err = quotactl (self->m_qcarg, QCMD(Q_SETQUOTA,(is_grpquota ? GRPQUOTA : USRQUOTA)), uid, CADR &dqblk);
+            int err = quotactl (self->m_qcarg, QCMD(Q_SETQUOTA,(is_grpquota ? GRPQUOTA : USRQUOTA)), uid, CADR &dqblk);
 #else
-        int err = quotactl (Q_SETQLIM, self->m_qcarg, uid, CADR &dqblk);
+            int err = quotactl (Q_SETQLIM, self->m_qcarg, uid, CADR &dqblk);
 #endif /* Q_CTL_V2 */
 #endif /* Q_CTL_V3 */
-        if (err)
-        {
-            RETVAL = FsQuota_QuotaCtlException(self, errno, NULL);
+            if (err)
+            {
+                RETVAL = FsQuota_QuotaCtlException(self, errno, NULL);
+            }
+#endif /* not USE_IOCTL */
         }
-#endif /* USE_IOCTL */
 #endif /* not NETBSD_LIBQUOTA */
     }
 
@@ -1043,8 +1080,8 @@ Quota_setqlim(Quota_ObjectType *self, PyObject *args, PyObject *kwds)
 // Implementation of the Quota.sync() method
 //
 PyDoc_STRVAR(Quota_sync__doc__,
-"quota()\n\n"
-"Sync quota changes to disk.");
+    "quota()\n\n"
+    "Sync quota changes to disk.");
 
 static PyObject *
 Quota_sync(Quota_ObjectType *self, PyObject *args)
@@ -1192,9 +1229,9 @@ Quota_sync(Quota_ObjectType *self, PyObject *args)
 // Implementation of the Quota.rpc_opt() method
 //
 PyDoc_STRVAR(Quota_rpc_opt__doc__,
-"rpc_opt(*)\n\n"
-"Set networking and authentication parameters for RPC\n"
-"Please refer to the documentation for a list of options.");
+    "rpc_opt(*)\n\n"
+    "Set networking and authentication parameters for RPC\n"
+    "Please refer to the documentation for a list of options.");
 
 static PyObject *
 Quota_rpc_opt(Quota_ObjectType *self, PyObject *args, PyObject *kwds)
@@ -1327,10 +1364,15 @@ Quota_init(Quota_ObjectType *self, PyObject *args, PyObject *kwds)
 
     if (p_rpc_host != NULL)
     {
+#ifndef NO_RPC
         self->m_rpc_host = strdup(p_rpc_host);
         self->m_qcarg = strdup(p_path);
         self->m_path = strdup("n/a");
         self->m_dev_fs_type = QUOTA_DEV_NFS;
+#else
+        FsQuota_QuotaCtlException(self, ENOTSUP, "RPC not supported for this platform");
+        return -1;
+#endif
     }
     else
     {
@@ -1604,14 +1646,12 @@ my_getmntent(T_MY_MNTENT_STATE * state, T_MY_MNTENT_BUF * str_buf)
 
 #endif /* NO_OPEN_MNTTAB */
 #else /* NO_MNTENT */
-#ifdef OSF_QUOTA
-    char *fstype = getvfsbynumber((int)state->mntp->f_type);
-#endif
     if ((state->mtab != NULL) && state->mtab_size)
     {
         str_buf->fsname = state->mntp->f_mntfromname;
         str_buf->path = state->mntp->f_mntonname;
 #ifdef OSF_QUOTA
+        char *fstype = getvfsbynumber((int)state->mntp->f_type);
         if (fstype != (char *) -1)
         {
             str_buf->fstyp = fstype;
@@ -1619,23 +1659,19 @@ my_getmntent(T_MY_MNTENT_STATE * state, T_MY_MNTENT_BUF * str_buf)
         else
 #endif
         {
-#ifdef __OpenBSD__
-            /* OpenBSD struct statfs lacks the f_type member (starting with release 2.7) */
-            str_buf->fstyp = "";
-#else /* !__OpenBSD__ */
-#ifdef HAVE_STATVFS
             str_buf->fstyp = state->mntp->f_fstypename;
-#else
-            str_buf->fstyp = state->mntp->f_type;
-#endif /* HAVE_STATVFS */
-#endif /* !__OpenBSD__ */
         }
-#ifdef HAVE_STATVFS
-        snprintf(state->flag_str_buf, sizeof(state->flag_str_buf), "%d", state->mntp->f_flag);
-#else
-        snprintf(state->flag_str_buf, sizeof(state->flag_str_buf), "%d", state->mntp->f_flags);
-#endif
-        str_buf->fsopt = state->flag_str_buf;
+        snprintf(state->str_mnt_flag, sizeof(state->str_mnt_flag),
+                        "%s%s%s%s%s%s%s",
+                        ((state->mntp->MNTINFO_FLAG_EL & MNT_LOCAL) ? "local" : "non-local"),
+                        ((state->mntp->MNTINFO_FLAG_EL & MNT_RDONLY) ? ",read-only" : ""),
+                        ((state->mntp->MNTINFO_FLAG_EL & MNT_SYNCHRONOUS) ? ",sync" : ""),
+                        ((state->mntp->MNTINFO_FLAG_EL & MNT_NOEXEC) ? ",noexec" : ""),
+                        ((state->mntp->MNTINFO_FLAG_EL & MNT_NOSUID) ? ",nosuid" : ""),
+                        ((state->mntp->MNTINFO_FLAG_EL & MNT_ASYNC) ? ",async" : ""),
+                        ((state->mntp->MNTINFO_FLAG_EL & MNT_QUOTA) ? ",quotas" : ""));
+        state->str_mnt_flag[sizeof(state->str_mnt_flag) - 1] = 0;
+        str_buf->fsopt = state->str_mnt_flag;
         RETVAL = 0;
 
         state->mtab_size--;
@@ -1920,16 +1956,15 @@ static PyStructSequence_Desc MntEntType_Desc =
 static int
 Quota_setqcarg(Quota_ObjectType *self)
 {
-    struct stat statbuf;
+    struct stat statbuf_target;  // keep complete struct for comparison b/c type of st_dev varies b/w platforms
+    struct stat statbuf_ent;
 
     // determine device ID at the given path for later comparison with mount points
-    int target_dev;
-    if (stat(self->m_path, &statbuf) != 0)
+    if (stat(self->m_path, &statbuf_target) != 0)
     {
         FsQuota_OsException(errno, "Failed to access path", self->m_path);
         return -1;
     }
-    target_dev = statbuf.st_dev;
 
     T_MY_MNTENT_STATE l_mntab;
     memset(&l_mntab, 0, sizeof(l_mntab));
@@ -1953,7 +1988,8 @@ Quota_setqcarg(Quota_ObjectType *self)
         }
 
         // compare device ID of mount point with that of target path
-        if ((stat(mntent.path, &statbuf) == 0) && (target_dev == statbuf.st_dev))
+        if ((stat(mntent.path, &statbuf_ent) == 0) &&
+            (statbuf_target.st_dev == statbuf_ent.st_dev))
         {
             const char * p = NULL;
 
@@ -1961,10 +1997,12 @@ Quota_setqcarg(Quota_ObjectType *self)
             if ((mntent.fsname[0] != '/') &&
                 ((p = strchr(mntent.fsname, ':')) != NULL) && (p[1] == '/'))
             {
+#ifndef NO_RPC
                 self->m_rpc_host = strdup(mntent.fsname);
                 self->m_rpc_host[p - mntent.fsname] = 0;
                 self->m_qcarg = strdup(p + 1);
                 self->m_dev_fs_type = QUOTA_DEV_NFS;
+#endif
             }
             // NFS /path@host -> swap to "host:/path"
             else if ((strncmp(mntent.fstyp, "nfs", 3) == 0) &&
@@ -1972,6 +2010,7 @@ Quota_setqcarg(Quota_ObjectType *self)
                      ((p = strchr(mntent.fsname, '@')) != NULL) &&
                      (strchr(p + 1, '/') == NULL) )
             {
+#ifndef NO_RPC
                 self->m_qcarg = (char*) malloc(strlen(mntent.fsname) + 1 + 1);
                 sprintf(self->m_qcarg, "%s:%.*s", p + 1, (int)(p - mntent.fsname), mntent.fsname);
 
@@ -1979,6 +2018,7 @@ Quota_setqcarg(Quota_ObjectType *self)
                 self->m_qcarg[p - mntent.fsname] = 0;
                 self->m_rpc_host = strdup(p + 1);
                 self->m_dev_fs_type = QUOTA_DEV_NFS;
+#endif
             }
             else  // local device
             {

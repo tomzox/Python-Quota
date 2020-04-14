@@ -6,4 +6,5 @@ include CHANGES
 include INSTALL
 include LICENSE
 include TODO
-exclude myconfig.h
+include MANIFEST.in
+include setup.py

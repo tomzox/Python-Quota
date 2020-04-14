@@ -44,7 +44,7 @@ def fmt_quota_vals(qtup):
 
 try:
     qObj = FsQuota.Quota(path)
-    print("Using device/argument \"%s\"" % qObj.dev)
+    print("Using device \"%s\"" % qObj.dev)
 
     print("Checking quota sync (may fail if quotas not enabled)...")
     qObj.sync()
@@ -62,7 +62,7 @@ try:
     ##
 
     print("Setting new quota limits...")
-    qObj.setqlim(ugid, *setq, timelimit_reset=1, grpquota=dogrp)
+    qObj.setqlim(ugid, *setq, timereset=1, grpquota=dogrp)
     print("Quotas set successfully for %s %d" % (typnam, ugid))
 
     print("Reading back new quota limits...")

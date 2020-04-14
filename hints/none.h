@@ -23,7 +23,7 @@
 
 /* Select one of the following, preferring the first */
 #include <rpcsvc/rquota.h> /**/
-/* #include "include/rquota.h" /**/
+/* #include "src/rquota.h" /**/
 
 /* See man socket(2) and man gethostbyname(3) */
 #include <sys/socket.h>
@@ -113,7 +113,7 @@
 
 /* name of the status entry in struc getquota_rslt and name of the struct
  * or union that contains the quota values. See include <rpcsvc/rquota.h>
- * or "include/rquota.h" if you're using MY_XDR */
+ * or "src/rquota.h" if you're using MY_XDR */
 #define GQR_STATUS gqr_status
 #define GQR_RQUOTA gqr_rquota
 
