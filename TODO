@@ -1,0 +1,9 @@
+optional enhancements:
+- RPC use persistent client connection (configurable)
+  add support for __enter__ and __exit__ for "with"
+- getmntent: distinguish end-of-list from error (when possible)?
+- use tirpc even if SUN-RPC is implemented in libc too:
+  requires linker options to control symbol resolution
+- unit-tests (as far as possible)
+- automatically define NDEBUG for debug builds (if possible?)
+- generate UNIX man page for dist

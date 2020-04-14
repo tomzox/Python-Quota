@@ -175,7 +175,7 @@ ext = Extension('FsQuota',
                 define_macros = extradef,
                 libraries     = extralibs,
                 library_dirs  = extralibdirs,
-                undef_macros  = ["NDEBUG"]   # TODO not for release
+                #undef_macros  = ["NDEBUG"]   # for debug build only
                )
 
 setup(name='FsQuota',

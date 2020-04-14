@@ -90,7 +90,7 @@ Quota.query()
 
 Get current usage and quota limits for blocks and files respectively,
 owned by the given user. The user is specified by a numeric UID.
-The result is a named tuple of type **FsQuota.QueryLimits**, so that
+The result is a named tuple of type **FsQuota.QueryResult**, so that
 members can be accessed via name as well as via indices:
 
 0. **bcount**: Number of 1 kB blocks currently used by inodes owned by the user.
@@ -253,8 +253,9 @@ Class FsQuota.MntTab()
 ======================
 
 This class defines objects that can be used as an iterator which lists all
-entries in the mount table. Each object returned by iteration is a
-named tuple of type **FsQuota.MntEnt** with the following entries of type string:
+entries in the mount table. Each object returned by iteration is a named
+tuple of type **FsQuota.MntEnt** with the following entries of type
+string:
 
 0. **mnt_fsname**: Name of the filesystem (e.g. device name)
 1. **mnt_dir**: Filesystem path prefix (aka mount point)
